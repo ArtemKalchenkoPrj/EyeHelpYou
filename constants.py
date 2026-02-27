@@ -1,0 +1,1 @@
+bot_username = "@ImageGuide_bot"
