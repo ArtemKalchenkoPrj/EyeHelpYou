@@ -9,17 +9,12 @@ async def main():
     bot = Bot(token=os.getenv("TELEGRAM_TOKEN"))
     dp = Dispatcher()
     dp.include_router(user)
+    print("Bot started")
     await dp.start_polling(bot)
 
-if __name__ == "__main__":
-    from Chains.processor import run_llm
-    import asyncio
-    asyncio.run(run_llm("Що зображено на фото?","C:/Users/2004a/Downloads/images.webp"))
-
-
-"""if __name__ == '__main__':
+if __name__ == '__main__':
     try:
         import asyncio
         asyncio.run(main())
     except KeyboardInterrupt:
-        pass"""
+        pass

@@ -1,13 +1,12 @@
 from groq import AsyncGroq
+import io
 
-async def voice_to_text(file_path: str) -> str:
+async def voice_to_text(audio_buffer: io.BytesIO) -> str:
     client = AsyncGroq()
-    with open(file_path, "rb") as audio_file:
-        transcription = await client.audio.transcriptions.create(
-            file=(file_path, audio_file.read()),
-            model="whisper-large-v3-turbo",
-            temperature=0,
-            response_format="verbose_json",
-        )
+    transcription = await client.audio.transcriptions.create(
+        file=("voice.ogg", audio_buffer.read()),
+        model="whisper-large-v3-turbo",
+        temperature=0,
+        response_format="verbose_json",
+    )
     return transcription.text
-

@@ -1,1 +1,2 @@
-bot_username = "@ImageGuide_bot"
+BOT_USERNAME = "@ImageGuide_bot"
+MAX_MESSAGE_MEMORY = 20
