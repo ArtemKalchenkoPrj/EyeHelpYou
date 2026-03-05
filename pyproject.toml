@@ -10,6 +10,8 @@ dependencies = [
     "langchain-core>=1.2.17",
     "langchain-ollama>=1.0.1",
     "ollama>=0.6.1",
+    "openai-whisper>=20250625",
+    "pydub>=0.25.1",
     "python-dotenv>=1.2.1",
     "python-telegram-bot>=22.6",
 ]

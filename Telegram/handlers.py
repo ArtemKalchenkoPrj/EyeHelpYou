@@ -20,6 +20,33 @@ async def reply_voice(message: Message, text: str):
         voice=BufferedInputFile(file=audio.read(), filename="voice.ogg")
     )
 
+async def set_user_name(message: Message, state: FSMContext, name: str):
+    await state.update_data(user_name=name)
+    await reply_voice(message, f"Ваше ім'я збережено: {name}")
+
+async def set_bot_name(message: Message, state: FSMContext, name: str):
+    await state.update_data(bot_name=name)
+    await reply_voice(message, f"Моє нове ім'я збережено: {name}")
+
+async def handle_intent(message: Message, state: FSMContext):
+    state_data = await state.get_data()
+
+    user_name, bot_name = await get_names(state_data, message)
+    await reply_voice(message, f"Помічник аналізує Запит. Будь ласка, почекайте його відповіді")
+
+    llm_response = await run_llm(state_data['user_question'], state_data['user_photo'], user_name, bot_name)
+
+    match llm_response.intent:
+        case "set_name":
+            await set_user_name(message, state, llm_response.value)
+
+        case "set_bot_name":
+            await state.update_data(bot_name=llm_response.value)
+            await reply_voice(message, f"Добре! Тепер мене звуть {llm_response.value}")
+
+        case "question":
+            await reply_voice(message, llm_response.value)
+
 @user.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
     hello_message = ("Вітаю! Бот було створено для допомоги людям із вадами зору. "
@@ -32,40 +59,37 @@ async def cmd_start(message: Message, state: FSMContext):
 
     await state.set_state(UserState.user_photo)
 
+
 @user.message(Command("name"))
 async def cmd_name(message: Message, state: FSMContext):
     parts = message.text.split(maxsplit=1)
-
     if len(parts) > 1:
-        name = parts[1]
-        await reply_voice(message, f"Ваше ім'я збережено: {name}")
-        await state.update_data(user_name=name)
+        await set_user_name(message, state, parts[1])
     else:
         await reply_voice(message, "Будь ласка, вкажіть ім'я після команди. Наприклад: похила риска нейм англійськими літерами Іван")
+
 
 @user.message(Command("name"), ~F.text)
 async def cmd_name_not_text(message: Message):
     await reply_voice(message, "Після команди похила риска нейм англійськими літерами потрібно написати ім'я текстом")
 
+
 @user.message(Command("botname"))
 async def cmd_name(message: Message, state: FSMContext):
     parts = message.text.split(maxsplit=1)
-
     if len(parts) > 1:
-        name = parts[1]
-        await reply_voice(message, f"Ім'я бота збережено: {name}")
-        await state.update_data(bot_name=name)
+        await set_bot_name(message, state, parts[1])
     else:
-        await reply_voice(message, "Будь ласка, вкажіть ім'я після команди. Наприклад: похила риска бот нейм без пропусків англійськими літерами та ваше ім'я")
+        await reply_voice(message,
+                           "Будь ласка, вкажіть ім'я після команди. Наприклад: похила риска бот нейм без пропусків англійськими літерами та ваше ім'я")
 
 @user.message(Command("botname"), ~F.text)
 async def cmd_name_not_text(message: Message):
     await reply_voice(message, "Після команди похила риска бот нейм без пропусків англійськими літерами потрібно написати ім'я текстом")
 
-
 @user.message(UserState.user_photo, F.photo)
 async def cmd_user_photo(message: Message, state: FSMContext, bot: Bot):
-    photo = message.photo[-1].file_id
+    photo = message.photo[0].file_id
 
     buffer = await bot.download(photo)
     image_bytes = buffer.read()
@@ -76,40 +100,27 @@ async def cmd_user_photo(message: Message, state: FSMContext, bot: Bot):
 
     await state.set_state(UserState.user_question)
 
-
 @user.message(UserState.user_question, F.text)
 async def cmd_user_text_question(message: Message, state: FSMContext):
     await state.update_data(user_question=message.text)
 
-    state_data = await state.get_data()
+    await handle_intent(message, state)
 
-    user_name, bot_name = await get_names(state_data, message)
-    await reply_voice(message, f"Помічник аналізує зображення. Будь ласка, почекайте його відповіді")
-
-    llm_response = await run_llm(state_data['user_question'], state_data['user_photo'], user_name, bot_name)
-
-    await reply_voice(message, llm_response)
     await state.set_state(UserState.user_question)
 
 @user.message(UserState.user_question, F.voice)
 async def cmd_user_voice_question(message: Message, state: FSMContext, bot: Bot):
     buffer = await bot.download(message.voice.file_id)
     text = await voice_to_text(buffer)
-
     await state.update_data(user_question=text)
-    state_data = await state.get_data()
 
-    user_name, bot_name = await get_names(state_data, message)
-    await reply_voice(message, f"Помічник аналізує зображення. Будь ласка, почекайте його відповіді")
+    await handle_intent(message, state)
 
-    llm_response = await run_llm(state_data['user_question'], state_data['user_photo'], user_name, bot_name)
-
-    await reply_voice(message, llm_response)
     await state.set_state(UserState.user_question)
 
 @user.message(UserState.user_question, F.photo)
 async def cmd_new_photo(message: Message, state: FSMContext, bot: Bot):
-    photo = message.photo[-1].file_id
+    photo = message.photo[0].file_id
     buffer = await bot.download(photo)
     image_bytes = buffer.read()
 
