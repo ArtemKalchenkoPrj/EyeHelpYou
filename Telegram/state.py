@@ -5,3 +5,5 @@ class UserState(StatesGroup):
     user_question = State()
     user_name = State()
     bot_name = State()
+    history = State()
+    is_specification = State()
