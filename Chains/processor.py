@@ -1,15 +1,15 @@
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
 import base64
 from Chains import models
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from typing import Literal
 
 import logging
 logger = logging.getLogger("Chains")
 
 class Intent(BaseModel):
-    intent: Literal["set_name", "set_bot_name", "question", "specification"]
+    intent: Literal["set_name", "set_bot_name", "question", "specification", "search"]
     value: str | None = None
 
 async def run_llm(history:list, question: str, image_bytes: bytes, user_name: str, bot_name: str = "Остап") -> Intent:
@@ -33,20 +33,26 @@ async def run_llm(history:list, question: str, image_bytes: bytes, user_name: st
     Також користувач може в запиті вказати якусь команду. Наприклад, "Тепер називай мене Наталія", 
     ти маєш повернути {{"intent":"set_name", "value":"Наталія"}}, або якщо користувач просто задає питання
     {{"intent":"question", "value":*Відповідь на питання*}}
+    Користувач також може попросити тебе пошукати інформацію в інтернеті. Для цього використовуй {{"intent":"search", "value":*відповідний запит*}} запит на пошук в інтернеті має бути чітким.
     Перелік доступних команд: 
-    - set_name: користувач хоче змінити своє ім'я
-    - set_bot_name: користувач хоче змінити твоє ім'я
+    - set_name: користувач хоче змінити своє ім'я. value - нове ім'я користувача
+    - set_bot_name: користувач хоче змінити твоє ім'я. value - твоє нове ім'я
     - question: у запиті не знайдено ніяких специфічних команд - просто відповідаєш на питання. value - твоя відповідь на це питання
-    
-    value - текст команди
+    - specification: користувач не надав на фото всієї потрібної інформації для відповіді. value - твої припущення щодо покращення
+    - search: краще за все буде пошукати інформацію щодо цього питання в інтернеті. value - пошуковий запит
     """
 
     image_base64 = base64.b64encode(image_bytes).decode("utf-8")
-    messages: list [SystemMessage | HumanMessage | AIMessage] = [SystemMessage(content=system)]
+    messages: list [SystemMessage | HumanMessage | AIMessage | ToolMessage] = [SystemMessage(content=system)]
 
-    for msg in history[:-1]:
+    for msg in history:
         if msg['role'] == 'human':
             messages.append(HumanMessage(content=msg["content"]))
+        elif msg['role'] == 'tool':
+            messages.append(ToolMessage(
+                content=msg["content"],
+                tool_call_id="search_result"
+            ))
         else:
             messages.append(AIMessage(content=msg["content"]))
 

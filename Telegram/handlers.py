@@ -1,19 +1,41 @@
+import asyncio
+
 from aiogram import Router, F, Bot
 from aiogram.types import Message, BufferedInputFile
 from aiogram.filters.command import Command, CommandStart
 from aiogram.fsm.context import FSMContext
+from ddgs import DDGS
+
 from Telegram.state import UserState
 from functools import wraps
 from Chains import *
 from dotenv import load_dotenv
 import os
 from constants import *
+from langchain_community.tools import DuckDuckGoSearchRun
 
 load_dotenv()
 admin_id = os.getenv('ADMIN_ID')
 user = Router()
 
 photo_quality = -1
+
+async def search_web(query: str, max_results: int = 5) -> str:
+    def _search():
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, max_results=max_results))
+        return results
+
+    results = await asyncio.to_thread(_search)
+
+    full_text = ""
+    for r in results:
+        full_text += f"Заголовок: {r['title']}\n"
+        full_text += f"Текст: {r['body']}\n"
+        full_text += f"Посилання: {r['href']}\n\n"
+
+    return full_text
+
 
 def admin_only(func):
     @wraps(func)
@@ -54,7 +76,7 @@ async def set_bot_name(message: Message, state: FSMContext, name: str):
     await state.update_data(bot_name=name)
     await reply_voice(message, f"Моє нове ім'я збережено: {name}")
 
-async def handle_intent(message: Message, state: FSMContext):
+async def handle_intent(message: Message, state: FSMContext, get_voice: bool =True, max_search_depth: int = 1):
     """
     Функція для відповіді на повідомлення за допомогою LLM.
     Використовує нейронну мережу для аналізу повідомлення
@@ -63,32 +85,37 @@ async def handle_intent(message: Message, state: FSMContext):
     Актуальне повідомлення для аналізу бере з актуального state. message потрібно тільки для відповіді на нього
     :param message: повідомлення на яке відповідає бот для підтвердження команди або відповіді на запитання
     :param state: пам'ять бота
+    :param get_voice: чи відправляти аудіо-повідомлення користувачеві
+    :param max_search_depth: глибина пошуку - максимальна кількість запитів підряд
     """
     state_data = await state.get_data()
 
     user_name, bot_name = state_data['user_name'], state_data['bot_name']
 
-    await reply_voice(message, f"Я аналізую запит. Будь ласка, почекайте")
+    if get_voice:
+        await reply_voice(message, f"Я аналізую запит. Будь ласка, почекайте")
 
     history = state_data.get('history', [])
 
     history.append({"role": "human", "content": state_data['user_question']})
 
-    if len(history) > MAX_MESSAGE_MEMORY:
-        history = history[-MAX_MESSAGE_MEMORY:]
-
     llm_response = await run_llm(history,state_data['user_question'], state_data['user_photo'], user_name, bot_name)
 
     history.append({"role": "ai", "content": llm_response.value})
+
+    if len(history) > MAX_MESSAGE_MEMORY:
+        history = history[-MAX_MESSAGE_MEMORY:]
 
     await state.update_data(history=history)
 
     match llm_response.intent:
         case "set_name":
             await set_user_name(message, state, llm_response.value)
+            await state.set_state(UserState.user_question)
 
         case "set_bot_name":
             await set_bot_name(message, state, llm_response.value)
+            await state.set_state(UserState.user_question)
 
         case "question":
             await reply_voice(message, llm_response.value)
@@ -97,7 +124,25 @@ async def handle_intent(message: Message, state: FSMContext):
         case "specification":
             await reply_voice(message, llm_response.value)
             await state.set_state(UserState.is_specification)
-            return
+
+        case "search":
+            if max_search_depth <= 0:
+                llm_response = await run_llm(history, state_data['user_question'], state_data['user_photo'], user_name, bot_name)
+
+                history.append({"role": "ai", "content": llm_response.value})
+
+                if len(history) > MAX_MESSAGE_MEMORY:
+                    history = history[-MAX_MESSAGE_MEMORY:]
+
+                await state.update_data(history=history)
+            else:
+                await reply_voice(message, "Я шукаю інформацію вмережі. Відповідь займе трішки більше часу")
+
+                search_result = await search_web(llm_response.value)
+                history.append({"role": "tool", "content": search_result})
+                await state.update_data(history=history)
+
+                await handle_intent(message, state, False, max_search_depth=max_search_depth-1)
 
 @user.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
@@ -159,7 +204,6 @@ async def cmd_user_photo(message: Message, state: FSMContext, bot: Bot):
         await handle_intent(message,state)
     else:
         await reply_voice(message, "Фото отримано. Тепер, будь ласка, задайте питання")
-    await state.set_state(UserState.user_question)
 
 @user.message(UserState.is_specification, F.photo)
 async def cmd_specification_photo(message: Message, state: FSMContext, bot: Bot):
@@ -202,7 +246,6 @@ async def cmd_new_photo(message: Message, state: FSMContext, bot: Bot):
         await handle_intent(message, state)
     else:
         await reply_voice(message, "Нове фото отримано. Тепер, будь ласка, задайте питання")
-    await state.set_state(UserState.user_question)
 
 
 @user.message(UserState.user_photo)
