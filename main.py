@@ -12,10 +12,16 @@ async def main():
     from dotenv import load_dotenv
     load_dotenv()
 
+    import logging
+    logging.basicConfig(level=logging.DEBUG)
+    logger = logging.getLogger("Chains")
+
     bot = Bot(token=os.getenv("TELEGRAM_TOKEN"))
     dp = Dispatcher()
     dp.include_router(user)
-    print("Bot started")
+
+    logger.debug("Я народився!")
+
     await dp.start_polling(bot)
 
 if __name__ == '__main__':
