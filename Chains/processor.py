@@ -7,6 +7,7 @@ from typing import Literal
 
 import logging
 logger = logging.getLogger("Chains")
+from datetime import datetime
 
 class Intent(BaseModel):
     intent: Literal["set_name", "set_bot_name", "question", "specification", "search"]
@@ -15,8 +16,11 @@ class Intent(BaseModel):
 async def run_llm(history:list, question: str, image_bytes: bytes, user_name: str, bot_name: str = "Остап") -> Intent:
     structured_llm = models.mind_model.with_structured_output(Intent)
 
+    current_date = datetime.now()
+
     system = f"""
     ВІДПОВІДАЙ ВИКЛЮЧНО У ФОРМАТІ JSON
+    Сьогодні {current_date}.
     Ти {bot_name} - помічник для людей із вадами зору. Користувач {user_name} надасть фото, якого фізично не може побачити і питання, яке
     його цікавить. Твоя задача - відповісти на це питання максимально змістовно і коротко. 
     Якщо фото має якісь вади, наприклад, надто засвічене, або затемнене, або об'єкт зображено на фото не повністю тощо,

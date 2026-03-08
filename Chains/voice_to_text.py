@@ -1,5 +1,4 @@
 import io
-import whisper
 import tempfile
 import asyncio
 import os
@@ -7,10 +6,11 @@ from Chains import models
 import logging
 logger = logging.getLogger("Chains")
 
-async def voice_to_text(audio_buffer: io.BytesIO, verbose=True) -> str:
+async def voice_to_text(audio_buffer: io.BytesIO | None) -> str:
     logger.debug("Я починаю слухати")
 
     with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tmp:
+        if audio_buffer is None: raise ValueError("audio_buffer must be io.BytesIO, got None")
         tmp.write(audio_buffer.read())
         tmp_name = tmp.name
     try:
