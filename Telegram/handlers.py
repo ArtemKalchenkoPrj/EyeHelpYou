@@ -1,4 +1,7 @@
 import asyncio
+import os
+from typing import Literal
+from functools import wraps
 
 from aiogram import Router, F, Bot
 from aiogram.types import Message, BufferedInputFile
@@ -7,12 +10,11 @@ from aiogram.fsm.context import FSMContext
 from ddgs import DDGS
 
 from Telegram.state import UserState
-from functools import wraps
-from Chains import *
-from dotenv import load_dotenv
-import os
-from constants import *
 from langchain_community.tools import DuckDuckGoSearchRun
+from dotenv import load_dotenv
+
+from Chains import *
+from constants import *
 
 load_dotenv()
 admin_id = os.getenv('ADMIN_ID')
@@ -20,36 +22,50 @@ user = Router()
 
 photo_quality = -1
 
-async def search_web(query: str, max_results: int = 5) -> str:
-    def _search():
-        with DDGS() as ddgs:
-            results = list(ddgs.text(query, max_results=max_results))
-        return results
+async def search_web(query: str, max_results: int=5, search_type: Literal['strong','weak']='weak') -> str:
+    """
+    Функція для пошуку інформації в мережі.
+    :param query: Пошуковий запит
+    :param max_results: Максимальна кількість паралельних запитів, при search_type='weak' не використовується
+    :param search_type: Тип пошуку. strong - сторінка повертається повністю, weak - сторінки групуються
+    :return:
+    """
+    if search_type == 'strong':
+        def _search():
+            with DDGS() as ddgs:
+                res = list(ddgs.text(query, max_results=max_results))
+            return res
 
-    results = await asyncio.to_thread(_search)
+        results = await asyncio.to_thread(_search)
+        full_text = ""
+        for r in results:
+            full_text += f"Заголовок: {r['title']}\n"
+            full_text += f"Текст: {r['body']}\n"
+            full_text += f"Посилання: {r['href']}\n\n"
 
-    full_text = ""
-    for r in results:
-        full_text += f"Заголовок: {r['title']}\n"
-        full_text += f"Текст: {r['body']}\n"
-        full_text += f"Посилання: {r['href']}\n\n"
+        return full_text
+    elif search_type == 'weak':
+        search = DuckDuckGoSearchRun()
+        result = search.invoke("погода в Харкові сьогодні")
 
-    return full_text
+        return result
+    else:
+        raise ValueError(f"search_type {search_type} is not supported")
 
 
 def admin_only(func):
     @wraps(func)
     async def wrapper(message: Message, *args, **kwargs):
         if message.from_user.id != admin_id:
-            return
+            return None
         return await func(message, *args, **kwargs)
     return wrapper
 
 async def reply_voice(message: Message, text: str):
     """
-    Функція для відповіді на повідомлення за допомогою голосового повідомлення
-    :param message: повідомлення на яке відповідає функція
-    :param text: текст голосового
+    Функція для відповіді на повідомлення за допомогою голосового повідомлення.
+    :param message: повідомлення на яке відповідає функція.
+    :param text: текст голосового.
     """
     audio = await text_to_voice(text)
     await message.reply_voice(
@@ -58,35 +74,35 @@ async def reply_voice(message: Message, text: str):
 
 async def set_user_name(message: Message, state: FSMContext, name: str):
     """
-    Функція для встановлення імені користувача
-    :param message: повідомлення на яке відповідається підтвердженням
-    :param state: стан телеграм чату
-    :param name: ім'я яке треба записати
+    Функція для встановлення імені користувача.
+    :param message: повідомлення на яке відповідається підтвердженням.
+    :param state: стан телеграм чату.
+    :param name: ім'я яке треба записати.
     """
     await state.update_data(user_name=name)
     await reply_voice(message, f"Ваше ім'я збережено: {name}")
 
 async def set_bot_name(message: Message, state: FSMContext, name: str):
     """
-    Функція для обробки імені бота
-    :param message: повідомлення на яке відповідає бот
-    :param state: стан чату
-    :param name: ім'я яке треба записати
+    Функція для обробки імені бота.
+    :param message: повідомлення на яке відповідає бот.
+    :param state: стан чату.
+    :param name: ім'я яке треба записати.
     """
     await state.update_data(bot_name=name)
     await reply_voice(message, f"Моє нове ім'я збережено: {name}")
 
-async def handle_intent(message: Message, state: FSMContext, get_voice: bool =True, max_search_depth: int = 1):
+async def handle_intent(message: Message, state: FSMContext, get_voice: bool =True, max_search_depth: int=1):
     """
     Функція для відповіді на повідомлення за допомогою LLM.
     Використовує нейронну мережу для аналізу повідомлення
     на предмет того чи містить запит виконати якусь інструкцію. Наявні такі команди: змінити ім'я бота,
     змінити ім'я користувача в пам'яті бота, відповідь на запитання.
     Актуальне повідомлення для аналізу бере з актуального state. message потрібно тільки для відповіді на нього
-    :param message: повідомлення на яке відповідає бот для підтвердження команди або відповіді на запитання
-    :param state: пам'ять бота
-    :param get_voice: чи відправляти аудіо-повідомлення користувачеві
-    :param max_search_depth: глибина пошуку - максимальна кількість запитів підряд
+    :param message: повідомлення на яке відповідає бот для підтвердження команди або відповіді на запитання.
+    :param state: пам'ять бота.
+    :param get_voice: чи відправляти аудіоповідомлення користувачеві.
+    :param max_search_depth: глибина пошуку - максимальна кількість запитів підряд.
     """
     state_data = await state.get_data()
 
@@ -204,6 +220,7 @@ async def cmd_user_photo(message: Message, state: FSMContext, bot: Bot):
         await handle_intent(message,state)
     else:
         await reply_voice(message, "Фото отримано. Тепер, будь ласка, задайте питання")
+        await state.set_state(UserState.user_question)
 
 @user.message(UserState.is_specification, F.photo)
 async def cmd_specification_photo(message: Message, state: FSMContext, bot: Bot):
@@ -246,6 +263,7 @@ async def cmd_new_photo(message: Message, state: FSMContext, bot: Bot):
         await handle_intent(message, state)
     else:
         await reply_voice(message, "Нове фото отримано. Тепер, будь ласка, задайте питання")
+        await state.set_state(UserState.user_question)
 
 
 @user.message(UserState.user_photo)
