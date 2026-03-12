@@ -181,6 +181,6 @@ pyrightconfig.json
 /httpRequests/
 /.idea/
 /pytest.ini
-/Tests/command_chain_tests.py
+/Tests/command_chain_test.py
 /Tests/router_chain_test.py
 /Tests/
