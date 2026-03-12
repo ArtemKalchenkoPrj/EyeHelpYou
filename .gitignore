@@ -180,3 +180,7 @@ pyrightconfig.json
 # Editor-based HTTP Client requests
 /httpRequests/
 /.idea/
+/pytest.ini
+/Tests/command_chain_tests.py
+/Tests/router_chain_test.py
+/Tests/

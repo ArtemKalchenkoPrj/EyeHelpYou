@@ -20,11 +20,11 @@ async def run_command(question: str):
     - set_bot_name: користувач хоче змінити твоє ім'я/ім'я бота
     Приклад відповіді: {"command":"set_user_name","command_argument":"Наталя"}
     """
-    structured_model = models.command_model.with_structured_input(Command)
+    structured_model = models.command_model.with_structured_output(Command)
     messages = [SystemMessage(content=system), HumanMessage(content=question)]
 
     logger.debug("Я починаю обмірковувати команду")
-    response = await structured_model.ainwoke(messages)
+    response = await structured_model.ainvoke(messages)
     logger.debug("Я закінчую обмірковувати команду")
 
     return response
