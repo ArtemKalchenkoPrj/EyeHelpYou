@@ -9,10 +9,16 @@ from Chains import models
 
 
 class Command(BaseModel):
+    """
+    command - команда
+    command_argument - аргумент команди
+
+    Достпні команди: set_user_name, set_bot_name
+    """
     command: Literal["set_user_name","set_bot_name"]
     command_argument: str
 
-async def run_command(question: str):
+async def run_command(question: str) -> Command:
     system = """
     ВІДПОВІДАЙ ВИКЛЮЧНО У ФОРМАТІ JSON
     Твоя задача - зрозуміти яку команду хоче виконати користувач і вказати аргументи цієї команди. Серед варіантів:

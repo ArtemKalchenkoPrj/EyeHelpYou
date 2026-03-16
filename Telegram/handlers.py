@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import os
 from typing import Literal
 from functools import wraps
@@ -8,7 +9,10 @@ from aiogram.types import Message, BufferedInputFile
 from aiogram.filters.command import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from ddgs import DDGS
+from langchain_core.messages import AIMessage, ToolMessage, HumanMessage
 
+from Chains.text_to_voice import answer_to_user
+from Chains.utils import *
 from Telegram.state import UserState
 from langchain_community.tools import DuckDuckGoSearchRun
 from dotenv import load_dotenv
@@ -16,149 +20,137 @@ from dotenv import load_dotenv
 from Chains import *
 from constants import *
 
+
 load_dotenv()
-admin_id = os.getenv('ADMIN_ID')
 user = Router()
 
-photo_quality = -1
-
-async def search_web(query: str, max_results: int=5, search_type: Literal['strong','weak']='weak') -> str:
+async def handle_answer(router_response: ChainRouter,
+                        state: FSMContext,
+                        message: Message):
     """
-    Функція для пошуку інформації в мережі.
-    :param query: Пошуковий запит
-    :param max_results: Максимальна кількість паралельних запитів, при search_type='weak' не використовується
-    :param search_type: Тип пошуку. strong - сторінка повертається повністю, weak - сторінки групуються
+    Функція для обробки результатів, отриманих з processor
+    :param router_response: інформація із router
+    :param state: стан aiogram
+    :param message: конкретне повідомлення, спіймане хендлером
     :return:
     """
-    if search_type == 'strong':
-        def _search():
-            with DDGS() as ddgs:
-                res = list(ddgs.text(query, max_results=max_results))
-            return res
+    search_query = router_response.search_query or ""
 
-        results = await asyncio.to_thread(_search)
-        full_text = ""
-        for r in results:
-            full_text += f"Заголовок: {r['title']}\n"
-            full_text += f"Текст: {r['body']}\n"
-            full_text += f"Посилання: {r['href']}\n\n"
-
-        return full_text
-    elif search_type == 'weak':
-        search = DuckDuckGoSearchRun()
-        result = search.invoke("погода в Харкові сьогодні")
-
-        return result
-    else:
-        raise ValueError(f"search_type {search_type} is not supported")
-
-
-def admin_only(func):
-    @wraps(func)
-    async def wrapper(message: Message, *args, **kwargs):
-        if message.from_user.id != admin_id:
-            return None
-        return await func(message, *args, **kwargs)
-    return wrapper
-
-async def reply_voice(message: Message, text: str):
-    """
-    Функція для відповіді на повідомлення за допомогою голосового повідомлення.
-    :param message: повідомлення на яке відповідає функція.
-    :param text: текст голосового.
-    """
-    audio = await text_to_voice(text)
-    await message.reply_voice(
-        voice=BufferedInputFile(file=audio.read(), filename="voice.ogg")
-    )
-
-async def set_user_name(message: Message, state: FSMContext, name: str):
-    """
-    Функція для встановлення імені користувача.
-    :param message: повідомлення на яке відповідається підтвердженням.
-    :param state: стан телеграм чату.
-    :param name: ім'я яке треба записати.
-    """
-    await state.update_data(user_name=name)
-    await reply_voice(message, f"Ваше ім'я збережено: {name}")
-
-async def set_bot_name(message: Message, state: FSMContext, name: str):
-    """
-    Функція для обробки імені бота.
-    :param message: повідомлення на яке відповідає бот.
-    :param state: стан чату.
-    :param name: ім'я яке треба записати.
-    """
-    await state.update_data(bot_name=name)
-    await reply_voice(message, f"Моє нове ім'я збережено: {name}")
-
-async def handle_intent(message: Message, state: FSMContext, get_voice: bool =True, max_search_depth: int=1):
-    """
-    Функція для відповіді на повідомлення за допомогою LLM.
-    Використовує нейронну мережу для аналізу повідомлення
-    на предмет того чи містить запит виконати якусь інструкцію. Наявні такі команди: змінити ім'я бота,
-    змінити ім'я користувача в пам'яті бота, відповідь на запитання.
-    Актуальне повідомлення для аналізу бере з актуального state. message потрібно тільки для відповіді на нього
-    :param message: повідомлення на яке відповідає бот для підтвердження команди або відповіді на запитання.
-    :param state: пам'ять бота.
-    :param get_voice: чи відправляти аудіоповідомлення користувачеві.
-    :param max_search_depth: глибина пошуку - максимальна кількість запитів підряд.
-    """
     state_data = await state.get_data()
 
-    user_name, bot_name = state_data['user_name'], state_data['bot_name']
+    history = state_data.get("history",[])
+    question = message.text or ""
 
-    if get_voice:
-        await reply_voice(message, f"Я аналізую запит. Будь ласка, почекайте")
+    if not question:
+        last_human = next((m for m in reversed(history) if isinstance(m, HumanMessage)), None)
+        question = last_human.content if last_human else ""
 
-    history = state_data.get('history', [])
+    user_image = state_data.get("wait_image",None)
+    bot_name = state_data.get("bot_name",f"{message.from_user.first_name}")
+    user_name = state_data.get("user_name","Остап")
+    is_image_needed = router_response.is_vision_needed or False
 
-    history.append({"role": "human", "content": state_data['user_question']})
+    if is_image_needed:
+        if user_image:
+            # імітація виконання інструменту для отримання зображення
+            history.append(AIMessage(
+                content=f"Маю отримати зображення, яке стосується запитання {question} від користувача.",
+                tool_calls=[{"id": "vision_result", "name": "vision", "args": {"question": question}}]
+            ))
+            history.append(ToolMessage(
+                content=[
+                    {
+                        "type": "image",
+                        "source_type": "base64",
+                        "data": user_image,
+                        "mime_type": "image/jpeg",
+                    },
+                ],
+                tool_call_id="vision_result",
+            ))
+            await state.update_data(wait_image=None)
+        else:
+            await answer_to_user(message, "Здається, я не можу відповісти на це питання без фото. "
+                                       "Можете, будь ласка, надіслати його? "
+                                       "Я допоможу якщо із фото будуть проблеми")
+            await state.set_state(UserState.wait_image)
+            await state.update_data(pending_router_response=router_response)
+            return
 
-    llm_response = await run_llm(history,state_data['user_question'], state_data['user_photo'], user_name, bot_name)
 
-    history.append({"role": "ai", "content": llm_response.value})
+    if search_query:
+        await answer_to_user(message, "Мені потрібно пошукати в інтернеті. Відповідь може зайняти трішки більше часу ніж зазвичай")
+        search_result = await search_web(search_query, 3, "strong")
+        # імітація виконання пошуку
+        history.append(AIMessage(
+            content=f"Пошукаю інформацію в інтернеті за запитом: {search_query}",
+            tool_calls=[{"id": "search_result", "name": "search", "args": {"search_query": search_query}}]
+        ))
+        history.append(ToolMessage(
+            content=search_result,
+            tool_call_id="search_result"
+        ))
 
-    if len(history) > MAX_MESSAGE_MEMORY:
-        history = history[-MAX_MESSAGE_MEMORY:]
+    await answer_to_user(message, "Мені треба подумати, це займе деякий час. Почекайте, будь ласка")
+    processor_response = await run_processor(bot_name, user_name, history)
 
-    await state.update_data(history=history)
+    history.append(AIMessage(processor_response.value))
 
-    match llm_response.intent:
-        case "set_name":
-            await set_user_name(message, state, llm_response.value)
-            await state.set_state(UserState.user_question)
-
-        case "set_bot_name":
-            await set_bot_name(message, state, llm_response.value)
-            await state.set_state(UserState.user_question)
-
+    match processor_response.task:
         case "question":
-            await reply_voice(message, llm_response.value)
-            await state.set_state(UserState.user_question)
-
+            await state.set_state(UserState.wait_input)
         case "specification":
-            await reply_voice(message, llm_response.value)
-            await state.set_state(UserState.is_specification)
+            await state.set_state(UserState.specification)
 
-        case "search":
-            if max_search_depth <= 0:
-                llm_response = await run_llm(history, state_data['user_question'], state_data['user_photo'], user_name, bot_name)
+    await answer_to_user(message, processor_response.value)
+    await state.update_data(history = await trim_history(history))
 
-                history.append({"role": "ai", "content": llm_response.value})
 
-                if len(history) > MAX_MESSAGE_MEMORY:
-                    history = history[-MAX_MESSAGE_MEMORY:]
+async def handle_command(command_response: ChainCommand, state: FSMContext, message: Message):
 
-                await state.update_data(history=history)
-            else:
-                await reply_voice(message, "Я шукаю інформацію вмережі. Відповідь займе трішки більше часу")
+    state_data = await state.get_data()
 
-                search_result = await search_web(llm_response.value)
-                history.append({"role": "tool", "content": search_result})
-                await state.update_data(history=history)
+    history = state_data.get("history",[])
 
-                await handle_intent(message, state, False, max_search_depth=max_search_depth-1)
+    match command_response.command:
+        case "set_user_name":
+            user_name = command_response.command_argument
+            history.append(AIMessage(
+                content=f"Зміню ім'я користувача з {state_data["user_name"]} на {user_name}",
+                tool_calls=[{"id": "set_user_name", "name": "set_user_name", "args": {"name": user_name}}]
+            ))
+            history.append(ToolMessage(
+                content=f"Тепер ім'я користувача - {user_name}",
+                tool_call_id="set_user_name"
+            ))
+            await state.update_data(user_name=user_name)
+            await answer_to_user(message, f"Добре, тепер я буду називати вас {user_name}")
+        case "set_bot_name":
+            bot_name = command_response.command_argument
+            history.append(AIMessage(
+                content=f"Зміню своє ім'я з {state_data["bot_name"]} на {bot_name}",
+                tool_calls=[{"id": "set_bot_name", "name": "set_bot_name", "args": {"name": bot_name}}]
+            ))
+            history.append(ToolMessage(
+                content=f"Тепер твоє ім'я - {bot_name}",
+                tool_call_id="set_bot_name"
+            ))
+            await state.update_data(bot_name=bot_name)
+            await answer_to_user(message, f"Добре, тепер мене звуть {bot_name}")
+
+    await state.update_data(history = await trim_history(history))
+    await state.set_state(UserState.wait_input)
+
+
+async def handle_router(router_response: ChainRouter, state: FSMContext, message: Message):
+    question = message.text
+    match router_response.task:
+        case "command":
+            command_response = await run_command(question)
+            await handle_command(command_response, state, message)
+        case "answer":
+            await handle_answer(router_response, state, message)
+
 
 @user.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
@@ -166,130 +158,123 @@ async def cmd_start(message: Message, state: FSMContext):
     state_data = await state.get_data()
     user_name, bot_name = state_data['user_name'], state_data['bot_name']
 
-    hello_message = (f"Вітаю, {user_name}! Мене звуть {bot_name}!"
-                     "Я створений для допомоги людям із вадами зору. "
-                     "Я можу розпізнавати зображення і відповідати на питання стосовно них. "
-                     "Для того щоб розпочати роботу, будь ласка, відправте фото і питання щодо нього. "
-                     "Питання може бути як в текстовому вигляді так і аудіо-повідомленням. "
-                     "Я також можу допомогти Вам підібрати ракурс, якщо мені буде складно його аналізувати. "
-                     "Ви також можете попросити мене називати вас інакше, або змінити моє ім'я")
+    hello_message = (f"“Вітаю, {user_name} мене звуть {bot_name}. "
+                     f"Я - ШІ-помічник для людей із вадами зору. "
+                     f"Я можу подивитись на зображення і відповісти на ваше запитання щодо ного. "
+                     f"Я також можу знайти якусь інформацію в інтернеті. "
+                     f"Якщо вам не подобається моє ім’я, або те як я Вас називаю - попросіть змінити ім’я. "
+                     f"Щоб розпочати роботу надішліть повідомлення, або фотографію.”")
 
-    await reply_voice(message, hello_message)
+    await answer_to_user(message, hello_message)
 
-    await state.set_state(UserState.user_photo)
-
-
-@user.message(Command("name"))
-async def cmd_name(message: Message, state: FSMContext):
-    parts = message.text.split(maxsplit=1)
-    if len(parts) > 1:
-        await set_user_name(message, state, parts[1])
-    else:
-        await reply_voice(message, "Будь ласка, вкажіть ім'я після команди. Наприклад: похила риска нейм англійськими літерами Іван")
-
-@user.message(Command("name"), ~F.text)
-async def cmd_name_not_text(message: Message):
-    await reply_voice(message, "Після команди похила риска нейм англійськими літерами потрібно написати ім'я текстом")
+    await state.set_state(UserState.wait_input)
+    logger.debug("cmd_start: state: wait_input")
 
 
-@user.message(Command("botname"))
-async def cmd_name(message: Message, state: FSMContext):
-    parts = message.text.split(maxsplit=1)
-    if len(parts) > 1:
-        await set_bot_name(message, state, parts[1])
-    else:
-        await reply_voice(message,
-                           "Будь ласка, вкажіть ім'я після команди. Наприклад: похила риска бот нейм без пропусків англійськими літерами та ваше ім'я")
+# користувач вводить перше запитання текстом
+@user.message(UserState.wait_input, F.text)
+async def user_text(message: Message, state: FSMContext):
+    question = message.text
+    state_data = await state.get_data()
 
-@user.message(Command("botname"), ~F.text)
-async def cmd_name_not_text(message: Message):
-    await reply_voice(message, "Після команди похила риска бот нейм без пропусків англійськими літерами потрібно написати ім'я текстом")
+    history = state_data.get("history",[])
 
+    history.append(HumanMessage(question))
+    history = await trim_history(history)
+    await state.update_data(history=history)
 
-@user.message(UserState.user_photo, F.photo)
-async def cmd_user_photo(message: Message, state: FSMContext, bot: Bot):
-    photo = message.photo[photo_quality].file_id
+    router_response = await run_router(history)
 
-    buffer = await bot.download(photo)
-    image_bytes = buffer.read()
-
-    await state.update_data(user_photo=image_bytes)
-
-    if message.caption:
-        await state.update_data(user_question=message.caption)
-        await handle_intent(message,state)
-    else:
-        await reply_voice(message, "Фото отримано. Тепер, будь ласка, задайте питання")
-        await state.set_state(UserState.user_question)
-
-@user.message(UserState.is_specification, F.photo)
-async def cmd_specification_photo(message: Message, state: FSMContext, bot: Bot):
-    photo = message.photo[photo_quality].file_id
-    buffer = await bot.download(photo)
-    image_bytes = buffer.read()
-
-    await state.update_data(user_photo=image_bytes)
-
-    await handle_intent(message, state)
-
-@user.message(UserState.is_specification)
-async def no_new_photo(message: Message):
-    await reply_voice(message, "Будь ласка, надішліть нове фото")
-
-@user.message(UserState.user_question, F.text)
-async def cmd_user_text_question(message: Message, state: FSMContext):
-    await state.update_data(user_question=message.text)
-
-    await handle_intent(message, state)
-
-@user.message(UserState.user_question, F.voice)
-async def cmd_user_voice_question(message: Message, state: FSMContext, bot: Bot):
-    buffer = await bot.download(message.voice.file_id)
-    text = await voice_to_text(buffer)
-    await state.update_data(user_question=text)
-
-    await handle_intent(message, state)
-
-@user.message(UserState.user_question, F.photo)
-async def cmd_new_photo(message: Message, state: FSMContext, bot: Bot):
-    photo = message.photo[photo_quality].file_id
-    buffer = await bot.download(photo)
-    image_bytes = buffer.read()
-
-    await state.update_data(user_photo=image_bytes)
-
-    if message.caption:
-        await state.update_data(user_question=message.caption)
-        await handle_intent(message, state)
-    else:
-        await reply_voice(message, "Нове фото отримано. Тепер, будь ласка, задайте питання")
-        await state.set_state(UserState.user_question)
+    await handle_router(router_response, state, message)
 
 
-@user.message(UserState.user_photo)
-async def no_photo(message: Message):
-    message_text = "Будь ласка, спершу надішліть фото"
+# першим повідомленням користувач надіслав фото
+@user.message(UserState.wait_input, F.photo)
+async def first_user_image(message: Message, state: FSMContext):
+    raise NotImplementedError
 
-    audio = await text_to_voice(message_text)
-    await message.reply_voice(
-        voice=BufferedInputFile(file=audio.read(), filename="voice.ogg")
+
+# першим повідомленням користувач надіслав аудіо
+@user.message(UserState.wait_input, F.voice)
+async def first_user_voice(message: Message, state: FSMContext):
+    raise NotImplementedError
+
+
+# першим повідомленням користувач не відправив ні фото, ні текст, ні аудіо
+@user.message(UserState.wait_input)
+async def wait_input_default_handler(message: Message):
+    await answer_to_user(message, "Вибачте, здається, я не можу це обробити, будь ласка, "
+                               "спробуйте надіслати фото, текст, або аудіо")
+
+
+# роутер вирішив, що потрібне фото, а фото немає
+@user.message(UserState.wait_image, F.photo)
+async def cmd_wait_image(message: Message, state: FSMContext, bot: Bot):
+    image = await get_image_from_message(message, bot)
+
+    await state.update_data(wait_image=image)
+
+    state_data = await state.get_data()
+    router_response = state_data["pending_router_response"]
+
+    await handle_answer(router_response, state, message)
+
+
+# режим допомоги для зображення
+@user.message(UserState.specification, F.photo)
+async def cmd_specification(message: Message, state: FSMContext, bot: Bot):
+    """
+    Хендлер для допомоги користувачу підібрати кадр. Історія повідомлень має обмеження. Тому необхідно її обрізати.
+    Важливим є збереження питання людини (шукаємо останнє людське повідомлення) та пошук у мережі, якщо такий був для того,
+    щоб модель могла дати відповідь на питання коли все ж таки потрібний кадр буде знайдено.
+    :param message: Повідомлення захоплене хендлером
+    :param state: Стан aiogram
+    :param bot: Бот
+    """
+
+    state_data = await state.get_data()
+    history = state_data['history']
+
+    image = await get_image_from_message(message, bot)
+    new_photo_call = AIMessage(
+        content="Отримую нове фото від користувача",
+        tool_calls=[{"id": "vision_result", "name": "vision", "args": {}}]
     )
+    new_photo_tool = ToolMessage(
+            content=[
+                {
+                    "type": "image",
+                    "source_type": "base64",
+                    "data": image,
+                    "mime_type": "image/jpeg",
+                },
+            ],
+            tool_call_id="vision_result",
+        )
 
-@user.message(UserState.user_question)
-async def no_question(message: Message):
-    message_text = "Будь ласка, надішліть питання текстом або голосовим повідомленням"
+    history = await trim_history(history) + [new_photo_call, new_photo_tool]
 
-    audio = await text_to_voice(message_text)
-    await message.reply_voice(
-        voice=BufferedInputFile(file=audio.read(), filename="voice.ogg")
-    )
+    await answer_to_user(message, "Мені треба подумати, це займе деякий час. Почекайте, будь ласка")
+    processor_response = await run_processor(state_data["bot_name"], state_data["user_name"], history)
+
+    history.append(AIMessage(content=processor_response.value))
+
+    await state.update_data(history=await trim_history(history))
+
+    match processor_response.task:
+        case "answer":
+            await answer_to_user(message, processor_response.value)
+            await state.set_state(UserState.wait_input)
+            logger.debug("cmd_specification: state: wait_input")
+        case "specification":
+            await answer_to_user(message, processor_response.value)
+            await state.set_state(UserState.specification)
+            logger.debug("cmd_specification: state: specification")
+
 
 @user.message()
 async def default_handler(message: Message):
     message_text = ("Щось пішло не так. будь ласка, надрукуйте команду "
                     "похила риска старт англійськими літерами щоб перезапустити бота")
 
-    audio = await text_to_voice(message_text)
-    await message.reply_voice(
-        voice=BufferedInputFile(file=audio.read(), filename="voice.ogg")
-    )
+    await answer_to_user(message, message_text)
