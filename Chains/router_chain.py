@@ -9,6 +9,12 @@ from pydantic import BaseModel
 from Chains import models
 
 class Router(BaseModel):
+    """
+    task - тип завдання "answer" або "command"
+    search_query - пошуковий запит для допомоги
+    is_vision_needed - чи потрібно попросити користувача надати зображення
+    """
+
     task: Literal["answer","command"]
     search_query: Optional[str] = None
     is_vision_needed: Optional[bool] = None

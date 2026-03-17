@@ -10,6 +10,40 @@ from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 
 from constants import MAX_MESSAGE_MEMORY
 
+async def search_web(query: str, max_results: int=5, search_type: Literal['strong','weak']='weak') -> str:
+    """
+    Функція для пошуку інформації в мережі.
+    :param query: Пошуковий запит
+    :param max_results: Максимальна кількість паралельних запитів, при search_type='weak' не використовується
+    :param search_type: Тип пошуку. strong - сторінка повертається повністю, weak - сторінки групуються
+    :return:
+    """
+    logger.debug("search_web")
+    logger.debug(f"Шукаю в інтернеті інформацію за запитом {query}")
+    if search_type == 'strong':
+        def _search():
+            with DDGS() as ddgs:
+                res = list(ddgs.text(query, max_results=max_results))
+            return res
+
+        results = await asyncio.to_thread(_search)
+        full_text = ""
+        for r in results:
+            full_text += f"Заголовок: {r['title']}\n"
+            full_text += f"Текст: {r['body']}\n"
+            full_text += f"Посилання: {r['href']}\n\n"
+
+
+        logger.debug(f"Ось що я знайшов: {full_text}")
+        return full_text
+    elif search_type == 'weak':
+        search = DuckDuckGoSearchRun()
+        result = search.invoke(query)
+
+        logger.debug(f"Ось що я знайшов: {result}")
+        return result
+    else:
+        raise ValueError(f"search_type {search_type} is not supported")
 
 async def trim_history(history: list, max_message_memory: int = MAX_MESSAGE_MEMORY) -> list:
     """
@@ -60,46 +94,3 @@ async def trim_history(history: list, max_message_memory: int = MAX_MESSAGE_MEMO
 
     # Сортуємо за оригінальним індексом в history
     return sorted(result, key=lambda m: history.index(m))
-
-async def get_image_from_message(message, bot):
-    photo = message.photo[-1].file_id
-    buffer = await bot.download(photo)
-    image_bytes = buffer.read()
-    image_base64 = base64.b64encode(image_bytes).decode("utf-8")
-    return image_base64
-
-
-async def search_web(query: str, max_results: int=5, search_type: Literal['strong','weak']='weak') -> str:
-    """
-    Функція для пошуку інформації в мережі.
-    :param query: Пошуковий запит
-    :param max_results: Максимальна кількість паралельних запитів, при search_type='weak' не використовується
-    :param search_type: Тип пошуку. strong - сторінка повертається повністю, weak - сторінки групуються
-    :return:
-    """
-    logger.debug("search_web")
-    logger.debug(f"Шукаю в інтернеті інформацію за запитом {query}")
-    if search_type == 'strong':
-        def _search():
-            with DDGS() as ddgs:
-                res = list(ddgs.text(query, max_results=max_results))
-            return res
-
-        results = await asyncio.to_thread(_search)
-        full_text = ""
-        for r in results:
-            full_text += f"Заголовок: {r['title']}\n"
-            full_text += f"Текст: {r['body']}\n"
-            full_text += f"Посилання: {r['href']}\n\n"
-
-
-        logger.debug(f"Ось що я знайшов: {full_text}")
-        return full_text
-    elif search_type == 'weak':
-        search = DuckDuckGoSearchRun()
-        result = search.invoke(query)
-
-        logger.debug(f"Ось що я знайшов: {result}")
-        return result
-    else:
-        raise ValueError(f"search_type {search_type} is not supported")

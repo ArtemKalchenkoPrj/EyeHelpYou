@@ -11,3 +11,4 @@ class UserState(StatesGroup):
     wait_input = State()
     specification = State()
     wait_image = State()
+    wait_question = State()
