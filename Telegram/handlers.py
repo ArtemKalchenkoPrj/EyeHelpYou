@@ -4,7 +4,7 @@ from aiogram.filters.command import CommandStart
 from aiogram.fsm.context import FSMContext
 
 from Chains.text_to_voice import answer_to_user
-from Chains.utils import *
+from utils import *
 from Telegram.state import UserState
 from dotenv import load_dotenv
 
@@ -35,30 +35,18 @@ async def handle_processor(router_response: ChainRouter,
     """
 
     state_data = await state.get_data()
-
     history = state_data.get("history",[])
     bot_name = state_data.get("bot_name",f"{message.from_user.first_name}")
     user_name = state_data.get("user_name","Остап")
-    is_image_needed = router_response.is_vision_needed or False
+    is_vision_needed = router_response.is_vision_needed or False
     search_query = router_response.search_query or ""
-
-    # Є пошуковий запит - виконати пошук - додати в історію
-    if search_query:
-        search_result = await search_web(search_query, 5, 'strong')
-        history.append(AIMessage(
-            content=f"Пошукаю інформацію в інтернеті за запитом: {search_query}",
-            tool_calls=[{"id": "search_result", "name": "search", "args": {"search_query": search_query}}]
-        ))
-        history.append(ToolMessage(
-            content=search_result,
-            tool_call_id="search_result"
-        ))
 
     # Потібне зображення - дістати його
     user_image = state_data.get("wait_image", None)
-    if is_image_needed or user_image:
+    if is_vision_needed or user_image:
         # Є? Записати в історію
         if user_image:
+
             history.append(AIMessage(
                 content=f"Маю отримати зображення, яке стосується запитання від користувача.",
                 tool_calls=[{"id": "vision_result", "name": "vision", "args": {}}]
@@ -74,17 +62,30 @@ async def handle_processor(router_response: ChainRouter,
                 ],
                 tool_call_id="vision_result",
             ))
+            await state.update_data(history = await trim_history(history))
             await state.update_data(wait_image=None)
         # Нема? Зупинити процес. Попросити надати зображення
         else:
             await answer_to_user(message, "Здається, я не можу відповісти на це питання без зображення."
                                           "Чи не могли б ви його надати, будь ласка?")
             await state.set_state(UserState.wait_image)
+            await state.update_data(history = await trim_history(history))
             await state.update_data(pending_router_response=router_response)
             return
 
     await answer_to_user(message, "Мені треба подумати, це займе деякий час. Почекайте, будь ласка")
-    history = await trim_history(history)
+
+    # Є пошуковий запит - виконати пошук - додати в історію
+    if search_query:
+        search_result = await search_web(search_query, 5, 'strong')
+        history.append(AIMessage(
+            content=f"Пошукаю інформацію в інтернеті за запитом: {search_query}",
+            tool_calls=[{"id": "search_result", "name": "search", "args": {"search_query": search_query}}]
+        ))
+        history.append(ToolMessage(
+            content=search_result,
+            tool_call_id="search_result"
+        ))
 
     logger.debug(f"History types: {[type(m).__name__ for m in history]}")
     for m in history:
@@ -192,17 +193,12 @@ async def user_sent_photo(message: Message, state: FSMContext, bot: Bot):
     await state.update_data(wait_image=image)
 
     question = message.caption
-
     if not question:
         await answer_to_user(message, "Фото отримано. Тепер, будь ласка, задайте питання")
         await state.set_state(UserState.wait_input)
         return
 
-    await handle_processor(ChainRouter(
-        task='answer',
-        search_query=None,
-        is_vision_needed=True
-    ), state, message)
+    await handle_router(question, state, message)
 
 
 # Користувач відправив питання у вигляді голосового повідомлення
@@ -210,6 +206,7 @@ async def user_sent_photo(message: Message, state: FSMContext, bot: Bot):
 async def user_sent_voice(message: Message, state: FSMContext, bot: Bot):
     buffer = await bot.download(message.voice.file_id)
     question = await voice_to_text(buffer)
+
     await handle_router(question, state, message)
 
 
@@ -244,11 +241,11 @@ async def wait_question_text(message: Message, state: FSMContext, bot: Bot):
 async def wait_question_photo(message: Message, state: FSMContext, bot: Bot):
     raise NotImplementedError
 
+
 # режим допомоги для зображення
 @user.message(UserState.specification, F.photo)
 async def cmd_specification(message: Message, state: FSMContext, bot: Bot):
     raise NotImplementedError
-
 
 
 @user.message()
