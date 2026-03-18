@@ -94,8 +94,18 @@ def trim_history(history: list, max_message_memory: int = MAX_MESSAGE_MEMORY) ->
 
     logger.debug(f"Історія: {[msg.content[:20] for msg in result if isinstance(msg, AIMessage)]}")
 
+    def _get_index_in_history(msg, history):
+        for i, item in enumerate(history):
+            if isinstance(item, list):
+                if msg in item:
+                    return i
+            elif item == msg:
+                return i
+        return -1
+
     # Сортуємо за оригінальним індексом в history
-    return sorted(result, key=lambda m: history.index(m))
+    return sorted(result, key=lambda m: _get_index_in_history(m, history))
+
 
 def unpack_history(history: list) -> list:
     result = []
