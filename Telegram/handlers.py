@@ -263,6 +263,13 @@ async def cmd_wait_image_text(message: Message, state: FSMContext):
     await user_sent_text(message, state)
 
 
+# Очікувалося фото, а користувач відправив голосове - обробити як голосове
+@user.message(UserState.wait_image, F.voice)
+async def cmd_wait_image_voice(message: Message, state: FSMContext):
+    await state.set_state(UserState.wait_input)
+    await user_sent_voice(message, state)
+
+
 @user.message()
 async def default_handler(message: Message):
     message_text = ("Щось пішло не так. будь ласка, надрукуйте команду "
