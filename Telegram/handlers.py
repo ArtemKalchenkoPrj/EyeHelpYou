@@ -95,15 +95,11 @@ async def handle_processor(router_response: ChainRouter,
     messages = unpack_history(history)
     processor_response = await run_processor(bot_name, user_name, messages)
 
-    history.append(AIMessage(processor_response.value))
+    history.append(AIMessage(processor_response))
 
-    match processor_response.task:
-        case "question":
-            await state.set_state(UserState.wait_input)
-        case "specification":
-            await state.set_state(UserState.specification)
+    await state.set_state(UserState.wait_input)
 
-    await answer_to_user(message, processor_response.value)
+    await answer_to_user(message, processor_response)
     await state.update_data(history = trim_history(history))
 
 
@@ -153,7 +149,11 @@ async def handle_router(question: str, state: FSMContext, message: Message):
     history.append(HumanMessage(question))
 
     history = trim_history(history)
+
     messages = unpack_history(history)
+    while messages and isinstance(messages[-1], AIMessage):
+        messages = messages[:-1]
+
     router_response = await run_router(messages)
 
     await state.update_data(history=history)
@@ -201,13 +201,20 @@ async def user_sent_photo(message: Message, state: FSMContext, bot: Bot):
     image = await _get_image_from_message(message, bot)
     await state.update_data(wait_image=image)
 
+    state_data = await state.get_data()
+    history = state_data.get('history', [])
+    human_msg = next((msg for msg in reversed(history) if isinstance(msg, HumanMessage)), None)
     question = message.caption
-    if not question:
-        await answer_to_user(message, "Фото отримано. Тепер, будь ласка, задайте питання")
-        await state.set_state(UserState.wait_input)
-        return
 
-    if len(question)<5:
+    if not question:
+        if not human_msg:
+            await answer_to_user(message, "Фото отримано. Тепер, будь ласка, задайте питання")
+            await state.set_state(UserState.wait_input)
+            return
+        else:
+            question = human_msg.content
+
+    if len(question) < 5:
         await answer_to_user(message, "Вибачте, я не можу відповісти на таке коротке запитання. "
                                       "Будь ласка, надайте більш розгорнуте питання")
         return
@@ -251,25 +258,9 @@ async def cmd_wait_image(message: Message, state: FSMContext, bot: Bot):
 
 # Очікувалося фото, а користувач відправив текст - обробити як текстове повідомлення
 @user.message(UserState.wait_image, F.text)
-async def cmd_wait_image_text(message: Message, state: FSMContext, bot: Bot):
-    raise NotImplementedError
-
-
-# режим допомоги для зображення
-@user.message(UserState.specification, F.photo)
-async def cmd_specification(message: Message, state: FSMContext, bot: Bot):
-    image = await _get_image_from_message(message, bot)
-    await state.update_data(wait_image=image)
-
-    router_response = ChainRouter(task='answer',search_query=None, is_vision_needed=True)
-
-    await handle_processor(router_response, state, message)
-
-
-# Очікувалося фото, а користувач відправив текст - обробити як текстове повідомлення
-@user.message(UserState.specification, F.text)
-async def cmd_specification_text(message: Message, state: FSMContext, bot: Bot):
-    raise NotImplementedError
+async def cmd_wait_image_text(message: Message, state: FSMContext):
+    await state.set_state(UserState.wait_input)
+    await user_sent_text(message, state)
 
 
 @user.message()

@@ -9,5 +9,4 @@ class UserState(StatesGroup):
 
     # стейти для обробки за допомогою хендлерів
     wait_input = State()
-    specification = State()
     wait_image = State()
