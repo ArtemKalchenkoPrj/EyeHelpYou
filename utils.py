@@ -45,7 +45,7 @@ async def search_web(query: str, max_results: int=5, search_type: Literal['stron
     else:
         raise ValueError(f"search_type {search_type} is not supported")
 
-async def trim_history(history: list, max_message_memory: int = MAX_MESSAGE_MEMORY) -> list:
+def trim_history(history: list, max_message_memory: int = MAX_MESSAGE_MEMORY) -> list:
     """
     Обрізає історію повідомлень до max_message_memory. Залишає важливі для контексту повідомлення: попереднє повідомлення від
     ШІ, попереднє повідомлення від користувача, попередній AiMessage + ToolMessage з результатами пошуку в мережі,
@@ -65,20 +65,18 @@ async def trim_history(history: list, max_message_memory: int = MAX_MESSAGE_MEMO
     vision_pair = []
     search_pair = []
     for i, msg in enumerate(history):
-        if isinstance(msg, AIMessage) and msg.tool_calls:
-            if any(tc["name"] == "search" for tc in msg.tool_calls):
-                if i + 1 < len(history) and isinstance(history[i + 1], ToolMessage):
-                    search_pair = [msg, history[i + 1]]
-
-            elif any(tc["name"] == "vision" for tc in msg.tool_calls):
-                    if i + 1 < len(history) and isinstance(history[i + 1], ToolMessage):
-                        vision_pair = [msg, history[i + 1]]
+        if isinstance(msg, list):
+            ai_msg, tool_msg = msg
+            if any(tc["name"] == "search" for tc in ai_msg.tool_calls):
+                search_pair = msg
+            else:
+                vision_pair = msg
 
     # Обов'язкові повідомлення які завжди залишаються
-    required = [] # system + user question + AiMessage(search call) + ToolMessage(search response) + model response
+    required = []
     if human_message:
         required.append(human_message)
-    if ai_message and ai_message not in search_pair and ai_message not in vision_pair:
+    if ai_message:
         required.append(ai_message)
 
     required.extend(search_pair)
@@ -86,7 +84,7 @@ async def trim_history(history: list, max_message_memory: int = MAX_MESSAGE_MEMO
 
     optional = [m for m in history if m not in required]
 
-    max_history = max_message_memory - len(required) - 1 # 1 - вільне місце для запису SystemMessage наступного разу
+    max_history = max_message_memory - len(required)
     if max_history <= 0:
         optional = []
     elif len(optional) > max_history:
@@ -98,3 +96,12 @@ async def trim_history(history: list, max_message_memory: int = MAX_MESSAGE_MEMO
 
     # Сортуємо за оригінальним індексом в history
     return sorted(result, key=lambda m: history.index(m))
+
+def unpack_history(history: list) -> list:
+    result = []
+    for msg in history:
+        if isinstance(msg, list):
+            result.extend(msg)
+        else:
+            result.append(msg)
+    return result

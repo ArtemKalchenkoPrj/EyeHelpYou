@@ -46,30 +46,31 @@ async def handle_processor(router_response: ChainRouter,
     if is_vision_needed or user_image:
         # Є? Записати в історію
         if user_image:
-
-            history.append(AIMessage(
-                content=f"Маю отримати зображення, яке стосується запитання від користувача.",
-                tool_calls=[{"id": "vision_result", "name": "vision", "args": {}}]
-            ))
-            history.append(ToolMessage(
-                content=[
-                    {
-                        "type": "image",
-                        "source_type": "base64",
-                        "data": user_image,
-                        "mime_type": "image/jpeg",
-                    },
-                ],
-                tool_call_id="vision_result",
-            ))
-            await state.update_data(history = await trim_history(history))
+            history.append(
+                [AIMessage(
+                    content=f"Маю отримати зображення, яке стосується запитання від користувача.",
+                    tool_calls=[{"id": "vision_result", "name": "vision", "args": {}}]
+                ),
+                ToolMessage(
+                    content=[
+                        {
+                            "type": "image",
+                            "source_type": "base64",
+                            "data": user_image,
+                            "mime_type": "image/jpeg",
+                        },
+                    ],
+                    tool_call_id="vision_result",
+                )]
+            )
+            await state.update_data(history = trim_history(history))
             await state.update_data(wait_image=None)
         # Нема? Зупинити процес. Попросити надати зображення
         else:
             await answer_to_user(message, "Здається, я не можу відповісти на це питання без зображення."
                                           "Чи не могли б ви його надати, будь ласка?")
             await state.set_state(UserState.wait_image)
-            await state.update_data(history = await trim_history(history))
+            await state.update_data(history = trim_history(history))
             await state.update_data(pending_router_response=router_response)
             return
 
@@ -78,23 +79,21 @@ async def handle_processor(router_response: ChainRouter,
     # Є пошуковий запит - виконати пошук - додати в історію
     if search_query:
         search_result = await search_web(search_query, 5, 'strong')
-        history.append(AIMessage(
-            content=f"Пошукаю інформацію в інтернеті за запитом: {search_query}",
-            tool_calls=[{"id": "search_result", "name": "search", "args": {"search_query": search_query}}]
-        ))
-        history.append(ToolMessage(
-            content=search_result,
-            tool_call_id="search_result"
-        ))
+        history.append(
+            [AIMessage(
+                content=f"Пошукаю інформацію в інтернеті за запитом: {search_query}",
+                tool_calls=[{"id": "search_result", "name": "search", "args": {"search_query": search_query}}]
+            ),
+            ToolMessage(
+                content=search_result,
+                tool_call_id="search_result"
+            )]
+        )
 
     logger.debug(f"History types: {[type(m).__name__ for m in history]}")
-    for m in history:
-        if isinstance(m, ToolMessage):
-            logger.debug(f"ToolMessage content type: {type(m.content)}")
-            if isinstance(m.content, list):
-                logger.debug(f"ToolMessage content[0] keys: {m.content[0].keys()}")
 
-    processor_response = await run_processor(bot_name, user_name, history)
+    messages = unpack_history(history)
+    processor_response = await run_processor(bot_name, user_name, messages)
 
     history.append(AIMessage(processor_response.value))
 
@@ -105,7 +104,7 @@ async def handle_processor(router_response: ChainRouter,
             await state.set_state(UserState.specification)
 
     await answer_to_user(message, processor_response.value)
-    await state.update_data(history = await trim_history(history))
+    await state.update_data(history = trim_history(history))
 
 
 async def handle_command(command_response: ChainCommand, state: FSMContext, message: Message):
@@ -117,40 +116,45 @@ async def handle_command(command_response: ChainCommand, state: FSMContext, mess
     match command_response.command:
         case "set_user_name":
             user_name = command_response.command_argument
-            history.append(AIMessage(
+            history.append(
+                [AIMessage(
                 content=f"Зміню ім'я користувача з {state_data["user_name"]} на {user_name}",
                 tool_calls=[{"id": "set_user_name", "name": "set_user_name", "args": {"name": user_name}}]
-            ))
-            history.append(ToolMessage(
-                content=f"Тепер ім'я користувача - {user_name}",
-                tool_call_id="set_user_name"
-            ))
+                ),
+                ToolMessage(
+                    content=f"Тепер ім'я користувача - {user_name}",
+                    tool_call_id="set_user_name"
+                )]
+            )
             await state.update_data(user_name=user_name)
             await answer_to_user(message, f"Добре, тепер я буду називати вас {user_name}")
         case "set_bot_name":
             bot_name = command_response.command_argument
-            history.append(AIMessage(
-                content=f"Зміню своє ім'я з {state_data["bot_name"]} на {bot_name}",
-                tool_calls=[{"id": "set_bot_name", "name": "set_bot_name", "args": {"name": bot_name}}]
-            ))
-            history.append(ToolMessage(
-                content=f"Тепер твоє ім'я - {bot_name}",
-                tool_call_id="set_bot_name"
-            ))
+            history.append(
+                [AIMessage(
+                    content=f"Зміню своє ім'я з {state_data["bot_name"]} на {bot_name}",
+                    tool_calls=[{"id": "set_bot_name", "name": "set_bot_name", "args": {"name": bot_name}}]
+                ),
+                ToolMessage(
+                    content=f"Тепер твоє ім'я - {bot_name}",
+                    tool_call_id="set_bot_name"
+                )]
+            )
             await state.update_data(bot_name=bot_name)
             await answer_to_user(message, f"Добре, тепер мене звуть {bot_name}")
 
-    await state.update_data(history = await trim_history(history))
+    await state.update_data(history = trim_history(history))
     await state.set_state(UserState.wait_input)
-
 
 async def handle_router(question: str, state: FSMContext, message: Message):
     """Обробка результату роутера: ставить відповідний стан"""
     state_data = await state.get_data()
     history = state_data.get("history",[])
     history.append(HumanMessage(question))
-    router_response = await run_router(history)
-    history = await trim_history(history)
+
+    history = trim_history(history)
+    messages = unpack_history(history)
+    router_response = await run_router(messages)
 
     await state.update_data(history=history)
 
@@ -183,7 +187,12 @@ async def cmd_start(message: Message, state: FSMContext):
 # Користувач вводить запитання текстом
 @user.message(UserState.wait_input, F.text)
 async def user_sent_text(message: Message, state: FSMContext):
-    await handle_router(message.text, state, message)
+    question = message.text
+    if len(question)<5:
+        await answer_to_user(message, "Вибачте, я не можу відповісти на таке коротке запитання. "
+                                      "Будь ласка, надайте більш розгорнуте питання")
+        return
+    await handle_router(question, state, message)
 
 
 # Користувач відправив фото
@@ -198,6 +207,11 @@ async def user_sent_photo(message: Message, state: FSMContext, bot: Bot):
         await state.set_state(UserState.wait_input)
         return
 
+    if len(question)<5:
+        await answer_to_user(message, "Вибачте, я не можу відповісти на таке коротке запитання. "
+                                      "Будь ласка, надайте більш розгорнуте питання")
+        return
+
     await handle_router(question, state, message)
 
 
@@ -206,6 +220,11 @@ async def user_sent_photo(message: Message, state: FSMContext, bot: Bot):
 async def user_sent_voice(message: Message, state: FSMContext, bot: Bot):
     buffer = await bot.download(message.voice.file_id)
     question = await voice_to_text(buffer)
+
+    if len(question)<5:
+        await answer_to_user(message, "Вибачте, я не можу відповісти на таке коротке запитання. "
+                                      "Будь ласка, надайте більш розгорнуте питання")
+        return
 
     await handle_router(question, state, message)
 
@@ -230,21 +249,26 @@ async def cmd_wait_image(message: Message, state: FSMContext, bot: Bot):
     await handle_processor(router_response, state, message)
 
 
-# Користувач додав питання до фото
-@user.message(UserState.wait_question, F.text)
-async def wait_question_text(message: Message, state: FSMContext, bot: Bot):
-    raise NotImplementedError
-
-
-# Користувач скинув нове фото замість того щоб поставити питання
-@user.message(UserState.wait_question, F.photo)
-async def wait_question_photo(message: Message, state: FSMContext, bot: Bot):
+# Очікувалося фото, а користувач відправив текст - обробити як текстове повідомлення
+@user.message(UserState.wait_image, F.text)
+async def cmd_wait_image_text(message: Message, state: FSMContext, bot: Bot):
     raise NotImplementedError
 
 
 # режим допомоги для зображення
 @user.message(UserState.specification, F.photo)
 async def cmd_specification(message: Message, state: FSMContext, bot: Bot):
+    image = await _get_image_from_message(message, bot)
+    await state.update_data(wait_image=image)
+
+    router_response = ChainRouter(task='answer',search_query=None, is_vision_needed=True)
+
+    await handle_processor(router_response, state, message)
+
+
+# Очікувалося фото, а користувач відправив текст - обробити як текстове повідомлення
+@user.message(UserState.specification, F.text)
+async def cmd_specification_text(message: Message, state: FSMContext, bot: Bot):
     raise NotImplementedError
 
 
