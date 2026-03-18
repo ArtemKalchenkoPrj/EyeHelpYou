@@ -69,7 +69,7 @@ def trim_history(history: list, max_message_memory: int = MAX_MESSAGE_MEMORY) ->
             ai_msg, tool_msg = msg
             if any(tc["name"] == "search" for tc in ai_msg.tool_calls):
                 search_pair = msg
-            else:
+            elif any(tc["name"] == "vision" for tc in ai_msg.tool_calls):
                 vision_pair = msg
 
     # Обов'язкові повідомлення які завжди залишаються
@@ -79,8 +79,11 @@ def trim_history(history: list, max_message_memory: int = MAX_MESSAGE_MEMORY) ->
     if ai_message:
         required.append(ai_message)
 
-    required.extend(search_pair)
-    required.extend(vision_pair)
+    if search_pair:
+        required.append(search_pair)
+    if vision_pair:
+        required.append(vision_pair)
+
 
     optional = [m for m in history if m not in required]
 
@@ -94,17 +97,8 @@ def trim_history(history: list, max_message_memory: int = MAX_MESSAGE_MEMORY) ->
 
     logger.debug(f"Історія: {[msg.content[:20] for msg in result if isinstance(msg, AIMessage)]}")
 
-    def _get_index_in_history(msg, history):
-        for i, item in enumerate(history):
-            if isinstance(item, list):
-                if msg in item:
-                    return i
-            elif item == msg:
-                return i
-        return -1
-
     # Сортуємо за оригінальним індексом в history
-    return sorted(result, key=lambda m: _get_index_in_history(m, history))
+    return sorted(result, key=lambda m: history.index(m))
 
 
 def unpack_history(history: list) -> list:
