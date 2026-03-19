@@ -93,6 +93,8 @@ async def handle_processor(router_response: ChainRouter,
     logger.debug(f"History types: {[type(m).__name__ for m in history]}")
 
     messages = unpack_history(history)
+
+
     processor_response = await run_processor(bot_name, user_name, messages)
 
     history.append(AIMessage(processor_response))
@@ -154,17 +156,32 @@ async def handle_router(question: str, state: FSMContext, message: Message):
     while messages and isinstance(messages[-1], AIMessage):
         messages = messages[:-1]
 
-    router_response = await run_router(messages)
+    try:
+        router_response = await run_router(messages)
 
-    await state.update_data(history=history)
+        await state.update_data(history=history)
 
-    match router_response.task:
-        case "command":
-            command_response = await run_command(question)
-            await handle_command(command_response, state, message)
-        case "answer":
-            await handle_processor(router_response, state, message)
-
+        match router_response.task:
+            case "command":
+                command_response = await run_command(question)
+                await handle_command(command_response, state, message)
+            case "answer":
+                await handle_processor(router_response, state, message)
+    except Exception as e:
+        error_message = ("Вибачте, я не можу обробити зображення. "
+                        "Можливо, воно містить матеріали делікатного характеру")
+        if "500" in str(e) or "Internal Server Error" in str(e):
+            bad_image_index = None
+            for i, msg in reversed(list(enumerate(history))):
+                match msg:
+                    case [_, ToolMessage(tool_call_id="vision_result")]:
+                        bad_image_index = i
+                        break
+            history[bad_image_index][1] = ToolMessage(content = error_message,
+                                                      tool_call_id="vision_result")
+            await answer_to_user(message,error_message)
+            await state.set_state(UserState.wait_input)
+        raise
 
 @user.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
