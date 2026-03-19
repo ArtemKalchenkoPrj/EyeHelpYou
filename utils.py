@@ -2,6 +2,10 @@ import asyncio
 import base64
 from typing import Literal
 import logging
+from urllib.parse import urlparse
+
+from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
+
 logger = logging.getLogger("Chains")
 
 from ddgs import DDGS
@@ -10,40 +14,42 @@ from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 
 from constants import MAX_MESSAGE_MEMORY
 
-async def search_web(query: str, max_results: int=5, search_type: Literal['strong','weak']='weak') -> str:
+async def search_web(query: str, max_results: int=5) -> str:
     """
     Функція для пошуку інформації в мережі.
     :param query: Пошуковий запит
-    :param max_results: Максимальна кількість паралельних запитів, при search_type='weak' не використовується
-    :param search_type: Тип пошуку. strong - сторінка повертається повністю, weak - сторінки групуються
-    :return:
+    :param max_results: Максимальна кількість запитів
+    :return: Результати запитів: Заголовок статті, текст статті, посилання на статтю
     """
+
     logger.debug("search_web")
     logger.debug(f"Шукаю в інтернеті інформацію за запитом {query}")
-    if search_type == 'strong':
-        def _search():
-            with DDGS() as ddgs:
-                res = list(ddgs.text(query, max_results=max_results))
-            return res
+    def _search():
+        with DDGS() as ddgs:
+            res = list(ddgs.text(
+                query,
+                max_results=max_results*2, # після фільтрації залишаться не всі посилання
+                region="ua-uk",
+                safesearch="moderate"
+            ))
+        return res
 
-        results = await asyncio.to_thread(_search)
-        full_text = ""
-        for r in results:
-            full_text += f"Заголовок: {r['title']}\n"
-            full_text += f"Текст: {r['body']}\n"
-            full_text += f"Посилання: {r['href']}\n\n"
+    results = await asyncio.to_thread(_search)
+
+    filtered = [r for r in results if not urlparse(r['href']).netloc.endswith('.ru')]
+    filtered = [r for r in filtered if 'ы' not in r['body'].lower() and 'ы' not in r['title'].lower()]
+    filtered = filtered[:max_results]
+
+    full_text = ""
+    for r in filtered:
+        full_text += f"Заголовок: {r['title']}\n"
+        full_text += f"Текст: {r['body']}\n"
+        full_text += f"Посилання: {r['href']}\n\n"
 
 
-        logger.debug(f"Ось що я знайшов: {full_text}")
-        return full_text
-    elif search_type == 'weak':
-        search = DuckDuckGoSearchRun()
-        result = search.invoke(query)
+    logger.debug(f"Ось що я знайшов: {full_text}")
+    return full_text
 
-        logger.debug(f"Ось що я знайшов: {result}")
-        return result
-    else:
-        raise ValueError(f"search_type {search_type} is not supported")
 
 def trim_history(history: list, max_message_memory: int = MAX_MESSAGE_MEMORY) -> list:
     """

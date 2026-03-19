@@ -78,7 +78,7 @@ async def handle_processor(router_response: ChainRouter,
 
     # Є пошуковий запит - виконати пошук - додати в історію
     if search_query:
-        search_result = await search_web(search_query, 5, 'strong')
+        search_result = await search_web(search_query, 5)
         history.append(
             [AIMessage(
                 content=f"Пошукаю інформацію в інтернеті за запитом: {search_query}",
