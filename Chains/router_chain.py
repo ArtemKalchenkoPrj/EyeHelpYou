@@ -40,12 +40,11 @@ async def run_router(history: list) -> Router:
     {{"task":"answer", "search_query":"Погода в Харкові сьогодні"}}
     """
 
-    text_only_history = [m for m in history if isinstance(m, HumanMessage) or
-                         (isinstance(m, AIMessage) and not m.tool_calls)]
-    messages = [SystemMessage(content=system)] + text_only_history
+    messages = [SystemMessage(content=system)] + history
     structured_model = models.router_model.with_structured_output(Router)
 
     logger.debug("Я думаю")
+
     response = await structured_model.ainvoke(messages)
     logger.debug("Я відповідаю")
 
