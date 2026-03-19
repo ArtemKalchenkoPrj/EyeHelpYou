@@ -1,4 +1,7 @@
 import warnings
+
+from Telegram.middleware import ThrottlingMiddleware
+
 warnings.filterwarnings("ignore", category=UserWarning, module="langchain_core")
 warnings.filterwarnings("ignore", category=UserWarning, module="whisper")
 
@@ -19,6 +22,7 @@ async def main():
     bot = Bot(token=os.getenv("TELEGRAM_TOKEN"))
     dp = Dispatcher()
     dp.include_router(user)
+    dp.message.middleware(ThrottlingMiddleware())
 
     logger.debug("Я народився!")
 
