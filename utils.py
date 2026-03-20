@@ -34,6 +34,7 @@ async def search_web(query: str, max_results: int=5) -> str:
 
     filtered = [r for r in results if not urlparse(r['href']).netloc.endswith('.ru')]
     filtered = [r for r in filtered if 'ы' not in r['body'].lower() and 'ы' not in r['title'].lower()]
+    filtered = [r for r in filtered if 'ё' not in r['body'].lower() and 'ё' not in r['title'].lower()]
     filtered = filtered[:max_results]
 
     full_text = ""
