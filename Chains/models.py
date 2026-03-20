@@ -38,7 +38,7 @@ def load_models():
     global router_model
     global command_model
 
-    vision_model_name = "qwen3.5:397b-cloud"#"qwen3.5:397b-cloud""gemma3:27b-cloud"
+    vision_model_name = "qwen3.5:397b-cloud"
 
     vision_model = ChatOllama(model=vision_model_name, temperature=0, format="json", reasoning=False)
 

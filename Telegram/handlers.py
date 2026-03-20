@@ -4,20 +4,31 @@ from aiogram import Router, F, Bot
 from aiogram.types import Message
 from aiogram.filters.command import CommandStart
 from aiogram.fsm.context import FSMContext
+from langchain_core.exceptions import OutputParserException
 from langchain_core.messages import ToolMessage, AIMessage, HumanMessage
 
 from Chains.text_to_voice import answer_to_user
-from constants import DEFAULT_BOT_NAME, MIN_QUESTION_LENGTH
+from constants import DEFAULT_BOT_NAME, MIN_QUESTION_LENGTH, MAX_QUESTION_LENGTH
 from utils import search_web, trim_history, unpack_history, logger
 from Telegram.state import UserState
 from dotenv import load_dotenv
-from pydantic import ValidationError
 
 from Chains import *
 
 
 load_dotenv()
 user = Router()
+
+async def is_valid_question_length(question, message, question_length: int = MAX_QUESTION_LENGTH):
+    if len(question.strip())<question_length:
+        await answer_to_user(message, "Вибачте, я не можу відповісти на таке коротке запитання. "
+                                      "Будь ласка, надайте більш розгорнуте питання")
+        return False
+    if len(question.strip())<question_length:
+        await answer_to_user(message, "Вибачте, я не можу відповісти на таке велике питання. "
+                                      "Будь ласка, сформулюйте питання більшстисло")
+        return False
+    return True
 
 async def _get_image_from_message(message, bot):
     """Функція для отримання картинки з повідомлення і конвертація її у формат, який LLM може прочитати"""
@@ -176,7 +187,7 @@ async def handle_router(question: str, state: FSMContext, message: Message):
             case "answer":
                 await handle_processor(router_response, state, message)
 
-    except ValidationError as e:
+    except OutputParserException as e:
         error_message = "Вибачте, здається, виникла помилка на стороні серверу. Будь ласка, спробуйте ще раз"
         last_human_message = None
         for i, msg in reversed(list(enumerate(history))):
@@ -225,12 +236,13 @@ async def cmd_start(message: Message, state: FSMContext):
     user_name = message.from_user.first_name
     await state.update_data(bot_name=DEFAULT_BOT_NAME, user_name=user_name)
 
-    hello_message = (f"Вітаю, {user_name} мене звуть {DEFAULT_BOT_NAME}. "
+    hello_message = (f"Вітаю {user_name} мене звуть {DEFAULT_BOT_NAME}. "
                      f"Я - ШІ-помічник для людей із вадами зору. "
                      f"Я можу подивитись на зображення і відповісти на ваше запитання щодо нього. "
                      f"Я також можу знайти якусь інформацію в інтернеті. "
                      f"Якщо вам не подобається моє ім'я, або те як я Вас називаю - попросіть змінити ім'я. "
-                     f"Щоб розпочати роботу надішліть повідомлення, або фотографію.")
+                     f"Щоб розпочати роботу надішліть повідомлення, або фотографію."
+                     f"Ви можете використовувати як текст так і аудіо - повідомлення.")
 
     await answer_to_user(message, hello_message)
 
@@ -241,10 +253,9 @@ async def cmd_start(message: Message, state: FSMContext):
 @user.message(UserState.wait_input, F.text)
 async def user_sent_text(message: Message, state: FSMContext):
     question = message.text
-    if len(question.strip())<MIN_QUESTION_LENGTH:
-        await answer_to_user(message, "Вибачте, я не можу відповісти на таке коротке запитання. "
-                                      "Будь ласка, надайте більш розгорнуте питання")
+    if not is_valid_question_length(question, message):
         return
+
     await handle_router(question, state, message)
 
 
@@ -266,9 +277,7 @@ async def user_sent_photo(message: Message, state: FSMContext, bot: Bot):
         else:
             question = human_msg.content
 
-    if len(question.strip()) < MIN_QUESTION_LENGTH:
-        await answer_to_user(message, "Вибачте, я не можу відповісти на таке коротке запитання. "
-                                      "Будь ласка, надайте більш розгорнуте питання")
+    if not is_valid_question_length(question, message):
         return
 
     await state.update_data(wait_image=image)
@@ -282,9 +291,7 @@ async def user_sent_voice(message: Message, state: FSMContext, bot: Bot):
     buffer.seek(0)
     question = await voice_to_text(buffer)
 
-    if len(question.strip())<MIN_QUESTION_LENGTH:
-        await answer_to_user(message, "Вибачте, я не можу відповісти на таке коротке запитання. "
-                                      "Будь ласка, надайте більш розгорнуте питання")
+    if not is_valid_question_length(question, message):
         return
 
     await handle_router(question, state, message)

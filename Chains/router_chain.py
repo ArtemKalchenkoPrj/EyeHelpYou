@@ -25,6 +25,7 @@ async def run_router(history: list) -> models.Router:
     
     Очікувані відповіді: {{"task":"answer", "is_vision_needed": true}}, 
     {{"task":"answer", "search_query":"Погода в Харкові сьогодні"}}
+    НІКОЛИ НЕ ВІДПОВІДЙ ПРОСТО ТЕКСТОМ ВИКОРИСТОВУЙ JSON
     """
 
     messages = [SystemMessage(content=system)] + history
