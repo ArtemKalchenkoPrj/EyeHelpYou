@@ -1,12 +1,17 @@
+import base64
+
 from aiogram import Router, F, Bot
 from aiogram.types import Message
 from aiogram.filters.command import CommandStart
 from aiogram.fsm.context import FSMContext
+from langchain_core.messages import ToolMessage, AIMessage, HumanMessage
 
 from Chains.text_to_voice import answer_to_user
-from utils import *
+from constants import DEFAULT_BOT_NAME, MIN_QUESTION_LENGTH
+from utils import search_web, trim_history, unpack_history, logger
 from Telegram.state import UserState
 from dotenv import load_dotenv
+from pydantic import ValidationError
 
 from Chains import *
 
@@ -18,6 +23,7 @@ async def _get_image_from_message(message, bot):
     """Функція для отримання картинки з повідомлення і конвертація її у формат, який LLM може прочитати"""
     photo = message.photo[-1].file_id
     buffer = await bot.download(photo)
+    buffer.seek(0)
     image_bytes = buffer.read()
     image_base64 = base64.b64encode(image_bytes).decode("utf-8")
     return image_base64
@@ -36,8 +42,8 @@ async def handle_processor(router_response: ChainRouter,
 
     state_data = await state.get_data()
     history = state_data.get("history",[])
-    bot_name = state_data.get("bot_name",f"{message.from_user.first_name}")
-    user_name = state_data.get("user_name","Остап")
+    user_name = state_data.get("user_name",f"{message.from_user.first_name}")
+    bot_name = state_data.get("bot_name",DEFAULT_BOT_NAME)
     is_vision_needed = router_response.is_vision_needed or False
     search_query = router_response.search_query or ""
 
@@ -63,15 +69,14 @@ async def handle_processor(router_response: ChainRouter,
                     tool_call_id="vision_result",
                 )]
             )
-            await state.update_data(history = trim_history(history))
-            await state.update_data(wait_image=None)
+            await state.update_data(history=trim_history(history), wait_image=None)
+
         # Нема? Зупинити процес. Попросити надати зображення
         else:
             await answer_to_user(message, "Здається, я не можу відповісти на це питання без зображення."
                                           "Чи не могли б ви його надати, будь ласка?")
             await state.set_state(UserState.wait_image)
-            await state.update_data(history = trim_history(history))
-            await state.update_data(pending_router_response=router_response)
+            await state.update_data(history = trim_history(history), pending_router_response=router_response)
             return
 
     await answer_to_user(message, "Мені треба подумати, це займе деякий час. Почекайте, будь ласка")
@@ -114,9 +119,10 @@ async def handle_command(command_response: ChainCommand, state: FSMContext, mess
     match command_response.command:
         case "set_user_name":
             user_name = command_response.command_argument
+            old_name = state_data.get("user_name", "невідомо")
             history.append(
                 [AIMessage(
-                content=f"Зміню ім'я користувача з {state_data["user_name"]} на {user_name}",
+                content=f"Зміню ім'я користувача з {old_name} на {user_name}",
                 tool_calls=[{"id": "set_user_name", "name": "set_user_name", "args": {"name": user_name}}]
                 ),
                 ToolMessage(
@@ -128,9 +134,10 @@ async def handle_command(command_response: ChainCommand, state: FSMContext, mess
             await answer_to_user(message, f"Добре, тепер я буду називати вас {user_name}")
         case "set_bot_name":
             bot_name = command_response.command_argument
+            old_bot_name = state_data.get("bot_name", DEFAULT_BOT_NAME)
             history.append(
                 [AIMessage(
-                    content=f"Зміню своє ім'я з {state_data["bot_name"]} на {bot_name}",
+                    content=f"Зміню своє ім'я з {old_bot_name} на {bot_name}",
                     tool_calls=[{"id": "set_bot_name", "name": "set_bot_name", "args": {"name": bot_name}}]
                 ),
                 ToolMessage(
@@ -143,6 +150,7 @@ async def handle_command(command_response: ChainCommand, state: FSMContext, mess
 
     await state.update_data(history = trim_history(history))
     await state.set_state(UserState.wait_input)
+
 
 async def handle_router(question: str, state: FSMContext, message: Message):
     """Обробка результату роутера: ставить відповідний стан"""
@@ -167,6 +175,25 @@ async def handle_router(question: str, state: FSMContext, message: Message):
                 await handle_command(command_response, state, message)
             case "answer":
                 await handle_processor(router_response, state, message)
+
+    except ValidationError as e:
+        error_message = "Вибачте, здається, виникла помилка на стороні серверу. Будь ласка, спробуйте ще раз"
+        last_human_message = None
+        for i, msg in reversed(list(enumerate(history))):
+            if isinstance(msg,HumanMessage):
+                    last_human_message = i
+                    break
+
+        # відкочуємо історію до поперереднього людського повідомлення.
+        if last_human_message:
+            history = history[:last_human_message]
+        # якщо попереднє людське повідомлення - перше в історії, або його взагалінема - історія стирається
+        else:
+            history = []
+
+        await answer_to_user(message, error_message)
+        await state.update_data(history=history)
+        await state.set_state(UserState.wait_input)
     except Exception as e:
         error_message = ("Вибачте, я не можу обробити зображення. "
                         "Можливо, воно містить матеріали делікатного характеру")
@@ -177,25 +204,33 @@ async def handle_router(question: str, state: FSMContext, message: Message):
                     case [_, ToolMessage(tool_call_id="vision_result")]:
                         bad_image_index = i
                         break
-            history[bad_image_index][1] = ToolMessage(content = error_message,
+
+            if bad_image_index is not None:
+                history[bad_image_index][1] = ToolMessage(content = error_message,
                                                       tool_call_id="vision_result")
-            await answer_to_user(message,error_message)
-            await state.set_state(UserState.wait_input)
-        raise
+
+                await answer_to_user(message, error_message)
+                await state.update_data(history=history)
+                await state.set_state(UserState.wait_input)
+            else:
+                logger.error("handle_router | vision_result not found in history")
+                await state.set_state(UserState.wait_input)
+        else:
+            raise
+
 
 @user.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
-    await state.update_data(bot_name="Остап", user_name=message.from_user.first_name)
-    state_data = await state.get_data()
-    user_name, bot_name = state_data['user_name'], state_data['bot_name']
+    user_name = message.from_user.first_name
+    await state.update_data(bot_name=DEFAULT_BOT_NAME, user_name=user_name)
 
-    hello_message = (f"“Вітаю, {user_name} мене звуть {bot_name}. "
+    hello_message = (f"Вітаю, {user_name} мене звуть {DEFAULT_BOT_NAME}. "
                      f"Я - ШІ-помічник для людей із вадами зору. "
                      f"Я можу подивитись на зображення і відповісти на ваше запитання щодо нього. "
                      f"Я також можу знайти якусь інформацію в інтернеті. "
                      f"Якщо вам не подобається моє ім'я, або те як я Вас називаю - попросіть змінити ім'я. "
-                     f"Щоб розпочати роботу надішліть повідомлення, або фотографію.”")
+                     f"Щоб розпочати роботу надішліть повідомлення, або фотографію.")
 
     await answer_to_user(message, hello_message)
 
@@ -206,7 +241,7 @@ async def cmd_start(message: Message, state: FSMContext):
 @user.message(UserState.wait_input, F.text)
 async def user_sent_text(message: Message, state: FSMContext):
     question = message.text
-    if len(question)<5:
+    if len(question.strip())<MIN_QUESTION_LENGTH:
         await answer_to_user(message, "Вибачте, я не можу відповісти на таке коротке запитання. "
                                       "Будь ласка, надайте більш розгорнуте питання")
         return
@@ -217,7 +252,6 @@ async def user_sent_text(message: Message, state: FSMContext):
 @user.message(UserState.wait_input, F.photo)
 async def user_sent_photo(message: Message, state: FSMContext, bot: Bot):
     image = await _get_image_from_message(message, bot)
-    await state.update_data(wait_image=image)
 
     state_data = await state.get_data()
     history = state_data.get('history', [])
@@ -232,11 +266,12 @@ async def user_sent_photo(message: Message, state: FSMContext, bot: Bot):
         else:
             question = human_msg.content
 
-    if len(question) < 5:
+    if len(question.strip()) < MIN_QUESTION_LENGTH:
         await answer_to_user(message, "Вибачте, я не можу відповісти на таке коротке запитання. "
                                       "Будь ласка, надайте більш розгорнуте питання")
         return
 
+    await state.update_data(wait_image=image)
     await handle_router(question, state, message)
 
 
@@ -244,9 +279,10 @@ async def user_sent_photo(message: Message, state: FSMContext, bot: Bot):
 @user.message(UserState.wait_input, F.voice)
 async def user_sent_voice(message: Message, state: FSMContext, bot: Bot):
     buffer = await bot.download(message.voice.file_id)
+    buffer.seek(0)
     question = await voice_to_text(buffer)
 
-    if len(question)<5:
+    if len(question.strip())<MIN_QUESTION_LENGTH:
         await answer_to_user(message, "Вибачте, я не можу відповісти на таке коротке запитання. "
                                       "Будь ласка, надайте більш розгорнуте питання")
         return
@@ -266,11 +302,10 @@ async def wait_input_default_handler(message: Message):
 async def cmd_wait_image(message: Message, state: FSMContext, bot: Bot):
     image = await _get_image_from_message(message, bot)
 
-    await state.update_data(wait_image=image)
-
     state_data = await state.get_data()
     router_response = state_data["pending_router_response"]
 
+    await state.update_data(wait_image=image, pending_router_response=None)
     await handle_processor(router_response, state, message)
 
 

@@ -1,5 +1,6 @@
-import os
-
 BOT_USERNAME = "@ImageGuide_bot"
 MAX_MESSAGE_MEMORY = 20
-ANSWER_TYPE = os.getenv("ANSWER_TYPE", "voice")
+
+DEFAULT_BOT_NAME = "Остап"
+DEFAULT_TTS_VOICE = "uk-UA-OstapNeural"
+MIN_QUESTION_LENGTH = 5

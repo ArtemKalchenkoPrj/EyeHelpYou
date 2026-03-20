@@ -13,7 +13,6 @@ async def voice_to_text(audio_buffer: io.BytesIO | None, max_seconds: int = 20) 
         raise ValueError("audio_buffer must be io.BytesIO, got None")
 
     with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tmp:
-        if audio_buffer is None: raise ValueError("audio_buffer must be io.BytesIO, got None")
         tmp.write(audio_buffer.read())
         tmp_name = tmp.name
 

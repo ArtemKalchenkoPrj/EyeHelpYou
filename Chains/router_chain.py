@@ -1,26 +1,13 @@
 from datetime import datetime
-from typing import Literal, Optional
-import logging
-logger = logging.getLogger("Chains")
 
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
-from pydantic import BaseModel
+from langchain_core.messages import SystemMessage
 
 from Chains import models
+from utils import logger
 
-class Router(BaseModel):
-    """
-    task - тип завдання "answer" або "command"
-    search_query - пошуковий запит для допомоги
-    is_vision_needed - чи потрібно попросити користувача надати зображення
-    """
 
-    task: Literal["answer","command"]
-    search_query: Optional[str] = None
-    is_vision_needed: Optional[bool] = None
-
-async def run_router(history: list) -> Router:
-    current_date = datetime.now()
+async def run_router(history: list) -> models.Router:
+    current_date = datetime.now().strftime("%d.%m.%Y %H:%M")
     system = f"""
     ВІДПОВІДАЙ ВИКЛЮЧНО У ФОРМАТІ JSON
     Сьогодні {current_date}
@@ -41,11 +28,9 @@ async def run_router(history: list) -> Router:
     """
 
     messages = [SystemMessage(content=system)] + history
-    structured_model = models.router_model.with_structured_output(Router)
 
     logger.debug("Я думаю")
-
-    response = await structured_model.ainvoke(messages)
+    response = await models.router_model.ainvoke(messages)
     logger.debug("Я відповідаю")
 
     return response

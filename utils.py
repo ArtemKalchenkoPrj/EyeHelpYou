@@ -1,18 +1,14 @@
 import asyncio
-import base64
-from typing import Literal
 import logging
 from urllib.parse import urlparse
 
-from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
-
-logger = logging.getLogger("Chains")
-
 from ddgs import DDGS
-from langchain_community.tools import DuckDuckGoSearchRun
-from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+from langchain_core.messages import HumanMessage, AIMessage
 
 from constants import MAX_MESSAGE_MEMORY
+
+
+logger = logging.getLogger("Chains")
 
 async def search_web(query: str, max_results: int=5) -> str:
     """
