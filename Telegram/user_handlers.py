@@ -1,30 +1,33 @@
 import base64
+import os
 
 from aiogram import Router, F, Bot
-from aiogram.types import Message
-from aiogram.filters.command import CommandStart
+from aiogram.types import Message, ErrorEvent
+from aiogram.filters.command import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from langchain_core.exceptions import OutputParserException
 from langchain_core.messages import ToolMessage, AIMessage, HumanMessage
 
 from Chains.text_to_voice import answer_to_user
-from constants import DEFAULT_BOT_NAME, MIN_QUESTION_LENGTH, MAX_QUESTION_LENGTH
 from utils import search_web, trim_history, unpack_history, logger
 from Telegram.state import UserState
 from dotenv import load_dotenv
 
 from Chains import *
+import settings_manager as s
 
 
 load_dotenv()
 user = Router()
 
-async def is_valid_question_length(question, message, question_length: int = MAX_QUESTION_LENGTH):
-    if len(question.strip())<question_length:
+async def is_valid_question_length(question, message,
+                                   min_question_length: int = s.get("MIN_QUESTION_LENGTH"),
+                                   max_question_length: int = s.get("MAX_QUESTION_LENGTH")) -> bool:
+    if len(question.strip())<=min_question_length:
         await answer_to_user(message, "Вибачте, я не можу відповісти на таке коротке запитання. "
                                       "Будь ласка, надайте більш розгорнуте питання")
         return False
-    if len(question.strip())<question_length:
+    if len(question.strip())>=max_question_length:
         await answer_to_user(message, "Вибачте, я не можу відповісти на таке велике питання. "
                                       "Будь ласка, сформулюйте питання більшстисло")
         return False
@@ -54,7 +57,7 @@ async def handle_processor(router_response: ChainRouter,
     state_data = await state.get_data()
     history = state_data.get("history",[])
     user_name = state_data.get("user_name",f"{message.from_user.first_name}")
-    bot_name = state_data.get("bot_name",DEFAULT_BOT_NAME)
+    bot_name = state_data.get("bot_name",s.get("DEFAULT_BOT_NAME"))
     is_vision_needed = router_response.is_vision_needed or False
     search_query = router_response.search_query or ""
 
@@ -145,7 +148,7 @@ async def handle_command(command_response: ChainCommand, state: FSMContext, mess
             await answer_to_user(message, f"Добре, тепер я буду називати вас {user_name}")
         case "set_bot_name":
             bot_name = command_response.command_argument
-            old_bot_name = state_data.get("bot_name", DEFAULT_BOT_NAME)
+            old_bot_name = state_data.get("bot_name", s.get("DEFAULT_BOT_NAME"))
             history.append(
                 [AIMessage(
                     content=f"Зміню своє ім'я з {old_bot_name} на {bot_name}",
@@ -205,6 +208,8 @@ async def handle_router(question: str, state: FSMContext, message: Message):
         await answer_to_user(message, error_message)
         await state.update_data(history=history)
         await state.set_state(UserState.wait_input)
+
+        raise
     except Exception as e:
         error_message = ("Вибачте, я не можу обробити зображення. "
                         "Можливо, воно містить матеріали делікатного характеру")
@@ -234,9 +239,10 @@ async def handle_router(question: str, state: FSMContext, message: Message):
 async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
     user_name = message.from_user.first_name
-    await state.update_data(bot_name=DEFAULT_BOT_NAME, user_name=user_name)
+    default_bot_name = s.get("DEFAULT_BOT_NAME")
+    await state.update_data(bot_name=default_bot_name, user_name=user_name)
 
-    hello_message = (f"Вітаю {user_name} мене звуть {DEFAULT_BOT_NAME}. "
+    hello_message = (f"Вітаю {user_name} мене звуть {default_bot_name}. "
                      f"Я - ШІ-помічник для людей із вадами зору. "
                      f"Я можу подивитись на зображення і відповісти на ваше запитання щодо нього. "
                      f"Я також можу знайти якусь інформацію в інтернеті. "
@@ -248,6 +254,9 @@ async def cmd_start(message: Message, state: FSMContext):
 
     await state.set_state(UserState.wait_input)
 
+@user.message(F.text.startswith("/"))
+async def unknown_command(message: Message):
+    await answer_to_user(message, "Невідома команда")
 
 # Користувач вводить запитання текстом
 @user.message(UserState.wait_input, F.text)
@@ -336,3 +345,10 @@ async def default_handler(message: Message):
                     "похила риска старт англійськими літерами щоб перезапустити бота")
 
     await answer_to_user(message, message_text)
+
+
+@user.errors()
+async def error_handler(event: ErrorEvent, bot):
+    logger.exception(f"Помилка: {event.exception}")
+    admin_id = int(os.getenv("ADMIN_ID"))
+    await bot.send_message(admin_id, f"Помилка: {event.exception}")

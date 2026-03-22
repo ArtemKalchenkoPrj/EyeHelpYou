@@ -4,7 +4,7 @@ from aiogram import BaseMiddleware
 from aiogram.types import BufferedInputFile
 
 from Chains import text_to_voice
-
+import settings_manager as s
 
 class ThrottlingMiddleware(BaseMiddleware):
     def __init__(self):
@@ -15,7 +15,7 @@ class ThrottlingMiddleware(BaseMiddleware):
         answer_to_user = "Я ще обробляю попереднє повідомлення. Будь ласка, зачекайте."
         if user_id in self.processing:
             bot = data["bot"]  # ← bot доступний через data
-            answer_type = os.getenv("ANSWER_TYPE", "voice").lower().strip()
+            answer_type = s.get('ANSWER_TYPE').lower().strip()
             if answer_type == "voice":
                 audio = await text_to_voice(answer_to_user)
                 await bot.answer_voice(

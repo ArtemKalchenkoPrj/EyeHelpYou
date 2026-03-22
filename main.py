@@ -1,15 +1,16 @@
+import os
 import warnings
 
+from aiogram import Bot, Dispatcher
+
+from Chains.models import load_models
+from Telegram.user_handlers import user
 from Telegram.middleware import ThrottlingMiddleware
+import settings_manager as s
+from Telegram.admin_handlers import admin
 
 warnings.filterwarnings("ignore", category=UserWarning, module="langchain_core")
 warnings.filterwarnings("ignore", category=UserWarning, module="whisper")
-
-import os
-from aiogram import Bot, Dispatcher
-from Telegram.handlers import user
-from Chains.models import load_models
-
 
 async def main():
     from dotenv import load_dotenv
@@ -21,6 +22,7 @@ async def main():
 
     bot = Bot(token=os.getenv("TELEGRAM_TOKEN"))
     dp = Dispatcher()
+    dp.include_router(admin)
     dp.include_router(user)
     dp.message.middleware(ThrottlingMiddleware())
 
@@ -31,6 +33,7 @@ async def main():
 if __name__ == '__main__':
     try:
         import asyncio
+        s.load_settings()
         load_models()
         asyncio.run(main())
     except KeyboardInterrupt:

@@ -1,0 +1,11 @@
+{
+  "MAX_MESSAGE_MEMORY": 20,
+  "DEFAULT_BOT_NAME": "Остап",
+  "DEFAULT_TTS_VOICE": "uk-UA-OstapNeural",
+  "MIN_QUESTION_LENGTH": 5,
+  "MAX_QUESTION_LENGTH": 250,
+  "VISION_MODEL_NAME": "qwen3.5:397b-cloud",
+  "COMMAND_MODEL_NAME": "ministral-3:14b-cloud",
+  "ROUTER_MODEL_NAME": "ministral-3:14b-cloud",
+  "ANSWER_TYPE": "text"
+}

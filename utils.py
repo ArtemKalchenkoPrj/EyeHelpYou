@@ -5,8 +5,7 @@ from urllib.parse import urlparse
 from ddgs import DDGS
 from langchain_core.messages import HumanMessage, AIMessage
 
-from constants import MAX_MESSAGE_MEMORY
-
+import settings_manager as s
 
 logger = logging.getLogger("Chains")
 
@@ -48,7 +47,7 @@ async def search_web(query: str, max_results: int=5) -> str:
     return full_text
 
 
-def trim_history(history: list, max_message_memory: int = MAX_MESSAGE_MEMORY) -> list:
+def trim_history(history: list, max_message_memory: int = s.get("MAX_MESSAGE_MEMORY")) -> list:
     """
     Обрізає історію повідомлень до max_message_memory. Залишає важливі для контексту повідомлення: попереднє повідомлення від
     ШІ, попереднє повідомлення від користувача, попередній AiMessage + ToolMessage з результатами пошуку в мережі,

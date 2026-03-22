@@ -9,7 +9,7 @@ from aiogram.types import BufferedInputFile, Message
 
 import re
 
-from constants import DEFAULT_TTS_VOICE
+import settings_manager as s
 
 logger = logging.getLogger("Chains")
 
@@ -33,7 +33,7 @@ def _filter_special_chars(text: str) -> str:
 async def text_to_voice(text: str) -> io.BytesIO:
 
     logger.debug("Я починаю говорити")
-    communicate = edge_tts.Communicate(text, voice=DEFAULT_TTS_VOICE)
+    communicate = edge_tts.Communicate(text, voice=s.get("DEFAULT_TTS_VOICE"))
     audio = io.BytesIO()
     async for chunk in communicate.stream():
         if chunk["type"] == "audio":
@@ -52,7 +52,7 @@ async def answer_to_user(message: Message, text: str, answer_type: Literal['voic
     :param answer_type: Яким чином буде виконуватися відповідь на повідомлення. voice - перетворення тексту на голосове, text - відповідь звичайним текстом
     """
     if answer_type is None:
-        answer_type = os.getenv("ANSWER_TYPE", "voice").lower().strip()
+        answer_type = s.get('ANSWER_TYPE').lower().strip()
 
     match answer_type:
         case 'voice':

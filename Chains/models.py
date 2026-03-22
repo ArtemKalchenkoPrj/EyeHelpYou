@@ -2,6 +2,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel
 
+import settings_manager as s
 
 whisper_model = None
 vision_model = None
@@ -38,14 +39,14 @@ def load_models():
     global router_model
     global command_model
 
-    vision_model_name = "qwen3.5:397b-cloud"
+    vision_model_name = s.get("VISION_MODEL_NAME")
 
     vision_model = ChatOllama(model=vision_model_name, temperature=0, format="json", reasoning=False)
 
     whisper_model = whisper.load_model("small")
 
-    router_model = ChatOllama(model="ministral-3:14b-cloud", temperature=0, format="json", reasoning=False)
+    router_model = ChatOllama(model=s.get("ROUTER_MODEL_NAME"), temperature=0, format="json", reasoning=False)
     router_model = router_model.with_structured_output(Router)
 
-    command_model = ChatOllama(model="ministral-3:14b-cloud", temperature=0, format="json", reasoning=False)
+    command_model = ChatOllama(model=s.get("COMMAND_MODEL_NAME"), temperature=0, format="json", reasoning=False)
     command_model = command_model.with_structured_output(Command)
