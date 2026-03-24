@@ -8,7 +8,11 @@ primary_region = 'ams'
 
 [build]
   builder = 'paketobuildpacks/builder:base'
-
+  
+[mounts]
+  source = "bot_data" 
+  destination = "/app/data"
+  
 [[vm]]
   memory = '1gb'
   cpu_kind = 'shared'
