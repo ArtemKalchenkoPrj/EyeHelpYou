@@ -1,0 +1,15 @@
+# fly.toml app configuration file generated for eyehelpyou--pqbag on 2026-03-24T17:50:09Z
+app = 'eyehelpyou'
+primary_region = 'ams'
+
+[build]
+
+[mounts]
+  source = "bot_data"
+  destination = "/app/data"
+
+[[vm]]
+  memory = '1gb'
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 512
