@@ -7,5 +7,5 @@
   "VISION_MODEL_NAME": "qwen3.5:397b-cloud",
   "COMMAND_MODEL_NAME": "ministral-3:14b-cloud",
   "ROUTER_MODEL_NAME": "ministral-3:14b-cloud",
-  "ANSWER_TYPE": "text"
+  "ANSWER_TYPE": "voice"
 }

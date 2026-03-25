@@ -18,9 +18,10 @@ class ThrottlingMiddleware(BaseMiddleware):
             answer_type = s.get('ANSWER_TYPE').lower().strip()
             if answer_type == "voice":
                 audio = await text_to_voice(answer_to_user)
-                await bot.answer_voice(
+                await bot.send_voice(
                     chat_id=event.chat.id,
-                    voice=BufferedInputFile(file=audio.read(), filename="voice.ogg")
+                    voice=BufferedInputFile(file=audio.read(), filename="voice.ogg"),
+                    reply_to_message_id=event.message_id
                 )
             else:
                 await event.answer(answer_to_user)

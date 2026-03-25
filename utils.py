@@ -47,7 +47,7 @@ async def search_web(query: str, max_results: int=5) -> str:
     return full_text
 
 
-def trim_history(history: list, max_message_memory: int = s.get("MAX_MESSAGE_MEMORY")) -> list:
+def trim_history(history: list, max_message_memory: int = None) -> list:
     """
     Обрізає історію повідомлень до max_message_memory. Залишає важливі для контексту повідомлення: попереднє повідомлення від
     ШІ, попереднє повідомлення від користувача, попередній AiMessage + ToolMessage з результатами пошуку в мережі,
@@ -57,6 +57,8 @@ def trim_history(history: list, max_message_memory: int = s.get("MAX_MESSAGE_MEM
     :param max_message_memory: максимальна кількість повідомлень в історії
     :return: обрізана історія
     """
+    if max_message_memory is None:
+        max_message_memory = s.get("MAX_MESSAGE_MEMORY")
 
     # Шукаємо останнє людське повідомлення, щоб 100% залишити
     human_message = next((m for m in reversed(history) if isinstance(m, HumanMessage)), None)

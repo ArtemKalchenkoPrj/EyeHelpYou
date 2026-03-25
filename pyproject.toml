@@ -7,9 +7,9 @@ dependencies = [
     "aiogram>=3.26.0",
     "ddgs>=9.11.2",
     "edge-tts>=7.2.7",
+    "faster-whisper>=1.2.1",
     "langchain-core>=1.2.17",
     "langchain-ollama>=1.0.1",
-    "openai-whisper>=20250625",
     "pydantic>=2.12.5",
     "python-dotenv>=1.2.1",
 ]

@@ -30,9 +30,8 @@ class Command(BaseModel):
     command_argument: str
 
 def load_models():
-    import whisper
+    from faster_whisper import WhisperModel
     from langchain_ollama import ChatOllama
-
 
     global whisper_model
     global vision_model
@@ -43,7 +42,7 @@ def load_models():
 
     vision_model = ChatOllama(model=vision_model_name, temperature=0, format="json", reasoning=False)
 
-    whisper_model = whisper.load_model("small")
+    whisper_model = WhisperModel("small", device="cpu", compute_type="int8")
 
     router_model = ChatOllama(model=s.get("ROUTER_MODEL_NAME"), temperature=0, format="json", reasoning=False)
     router_model = router_model.with_structured_output(Router)
