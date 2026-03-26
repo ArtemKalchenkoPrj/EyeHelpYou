@@ -1,3 +1,4 @@
+import os
 from typing import Literal, Optional
 
 from pydantic import BaseModel
@@ -38,14 +39,41 @@ def load_models():
     global router_model
     global command_model
 
-    vision_model_name = s.get("VISION_MODEL_NAME")
+    base_url = "https://fly-ollama-bot.fly.dev/"
 
-    vision_model = ChatOllama(model=vision_model_name, temperature=0, format="json", reasoning=False)
+    vision_model = ChatOllama(
+        base_url=base_url,
+        model=s.get("VISION_MODEL_NAME"),
+        reasoning=False,
+        format="json",
+        temperature=0,
+        client_kwargs={
+            "headers": {"Authorization": f"Bearer {os.getenv('OLLAMA_KEY')}"}
+        }
+    )
 
     whisper_model = WhisperModel("small", device="cpu", compute_type="int8")
 
-    router_model = ChatOllama(model=s.get("ROUTER_MODEL_NAME"), temperature=0, format="json", reasoning=False)
+    router_model = ChatOllama(
+        base_url=base_url,
+        model=s.get("ROUTER_MODEL_NAME"),
+        reasoning=False,
+        format="json",
+        temperature=0,
+        client_kwargs={
+            "headers": {"Authorization": f"Bearer {os.getenv('OLLAMA_KEY')}"}
+        }
+    )
     router_model = router_model.with_structured_output(Router)
 
-    command_model = ChatOllama(model=s.get("COMMAND_MODEL_NAME"), temperature=0, format="json", reasoning=False)
+    command_model = ChatOllama(
+        base_url=base_url,
+        model=s.get("COMMAND_MODEL_NAME"),
+        reasoning=False,
+        format="json",
+        temperature=0,
+        client_kwargs={
+            "headers": {"Authorization": f"Bearer {os.getenv('OLLAMA_KEY')}"}
+        }
+    )
     command_model = command_model.with_structured_output(Command)

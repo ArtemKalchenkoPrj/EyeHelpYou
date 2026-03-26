@@ -11,13 +11,11 @@ from langchain_core.messages import ToolMessage, AIMessage, HumanMessage
 from Chains.text_to_voice import answer_to_user
 from utils import search_web, trim_history, unpack_history, logger
 from Telegram.state import UserState
-from dotenv import load_dotenv
 
 from Chains import *
 import settings_manager as s
 
 
-load_dotenv()
 user = Router()
 
 async def is_valid_question_length(question, message,

@@ -12,9 +12,9 @@ from Telegram.admin_handlers import admin
 warnings.filterwarnings("ignore", category=UserWarning, module="langchain_core")
 warnings.filterwarnings("ignore", category=UserWarning, module="whisper")
 
+
 async def main():
-    from dotenv import load_dotenv
-    load_dotenv()
+
 
     import logging
     logging.basicConfig(level=logging.DEBUG)
@@ -33,6 +33,9 @@ async def main():
 if __name__ == '__main__':
     try:
         import asyncio
+        from dotenv import load_dotenv
+
+        load_dotenv()
         s.load_settings()
         load_models()
         asyncio.run(main())

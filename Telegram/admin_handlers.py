@@ -6,6 +6,9 @@ from aiogram.filters import Command
 from aiogram.types import Message
 
 import settings_manager as s
+from dotenv import load_dotenv
+
+load_dotenv()
 
 admin = Router()
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
