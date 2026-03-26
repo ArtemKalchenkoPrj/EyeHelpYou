@@ -5,7 +5,7 @@ RUN pip install uv
 WORKDIR /app
 
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen
+RUN apt-get update && apt-get install -y ffmpeg && uv sync --frozen
 
 COPY . .
 
