@@ -3,11 +3,13 @@ from typing import Literal
 import logging
 
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
+from langsmith import traceable
 from pydantic import BaseModel
 
 from Chains import models
 logger = logging.getLogger("Chains")
 
+@traceable(run_type="llm", name="Processor")
 async def run_processor(bot_name: str,
                         user_name: str,
                         history: list):
@@ -36,4 +38,7 @@ async def run_processor(bot_name: str,
     response = await models.vision_model.ainvoke(messages)
     logger.debug("Я закінчую думати")
 
-    return response.content
+    content = response.content
+    if isinstance(content, list):
+        content = " ".join(block.get("text", "") for block in content if block.get("type") == "text")
+    return content

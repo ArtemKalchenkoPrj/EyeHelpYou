@@ -2,6 +2,8 @@ import os
 from typing import Literal, Optional
 
 from pydantic import BaseModel
+from langchain_openai import ChatOpenAI
+from groq import Groq
 
 import settings_manager as s
 
@@ -9,6 +11,22 @@ whisper_model = None
 vision_model = None
 router_model = None
 command_model = None
+
+
+def _make_openrouter_llm(model_name: str, temperature: float = 0, **kwargs) -> ChatOpenAI:
+    """Фабрика для створення ChatOpenAI, налаштованого на OpenRouter."""
+    return ChatOpenAI(
+        reasoning={"effort": "none"},
+        model=model_name,
+        temperature=temperature,
+        api_key=os.getenv("OPENROUTER_API_KEY"),
+        base_url="https://openrouter.ai/api/v1",
+        default_headers={
+            "HTTP-Referer": "https://eye-help-you.fly.dev",
+            "X-Title": "EyeHelpYou_tg_bot",
+        },
+        **kwargs
+    )
 
 class Router(BaseModel):
     """
@@ -31,49 +49,24 @@ class Command(BaseModel):
     command_argument: str
 
 def load_models():
-    from faster_whisper import WhisperModel
-    from langchain_ollama import ChatOllama
 
     global whisper_model
     global vision_model
     global router_model
     global command_model
 
-    base_url = "https://fly-ollama-bot.fly.dev/"
+    whisper_model = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-    vision_model = ChatOllama(
-        base_url=base_url,
-        model=s.get("VISION_MODEL_NAME"),
-        reasoning=False,
-        format="json",
-        temperature=0,
-        client_kwargs={
-            "headers": {"Authorization": f"Bearer {os.getenv('OLLAMA_KEY')}"}
-        }
+    vision_model = _make_openrouter_llm(s.get("VISION_MODEL_NAME"))
+
+    router_model = _make_openrouter_llm(
+        model_name=s.get("ROUTER_MODEL_NAME"),
+        model_kwargs={"response_format": {"type": "json_object"}},
     )
+    router_model = router_model.with_structured_output(Router, method="json_mode")
 
-    whisper_model = WhisperModel("small", device="cpu", compute_type="int8")
-
-    router_model = ChatOllama(
-        base_url=base_url,
-        model=s.get("ROUTER_MODEL_NAME"),
-        reasoning=False,
-        format="json",
-        temperature=0,
-        client_kwargs={
-            "headers": {"Authorization": f"Bearer {os.getenv('OLLAMA_KEY')}"}
-        }
+    command_model = _make_openrouter_llm(
+        model_name=s.get("COMMAND_MODEL_NAME"),
+        model_kwargs={"response_format": {"type": "json_object"}},
     )
-    router_model = router_model.with_structured_output(Router)
-
-    command_model = ChatOllama(
-        base_url=base_url,
-        model=s.get("COMMAND_MODEL_NAME"),
-        reasoning=False,
-        format="json",
-        temperature=0,
-        client_kwargs={
-            "headers": {"Authorization": f"Bearer {os.getenv('OLLAMA_KEY')}"}
-        }
-    )
-    command_model = command_model.with_structured_output(Command)
+    command_model = command_model.with_structured_output(Command, method="json_mode")

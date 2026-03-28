@@ -4,11 +4,13 @@ from urllib.parse import urlparse
 
 from ddgs import DDGS
 from langchain_core.messages import HumanMessage, AIMessage
+from langsmith import traceable
 
 import settings_manager as s
 
 logger = logging.getLogger("Chains")
 
+@traceable(run_type="retriever")
 async def search_web(query: str, max_results: int=5) -> str:
     """
     Функція для пошуку інформації в мережі.

@@ -1,11 +1,12 @@
 from datetime import datetime
 
 from langchain_core.messages import SystemMessage
+from langsmith import traceable
 
 from Chains import models
 from utils import logger
 
-
+@traceable(run_type="llm", name="Router")
 async def run_router(history: list) -> models.Router:
     current_date = datetime.now().strftime("%d.%m.%Y %H:%M")
     system = f"""
@@ -21,10 +22,7 @@ async def run_router(history: list) -> models.Router:
     для отримання цієї інформації та чи потрібно користувачеві надати фото для того щоб отримати відповідь.
     Для пошуку в інтернеті надай короткий пошуковий запит.
     Фото потрібне тільки якщо питання стосується конкретного об'єкту який бачить користувач.
-    Фото НЕ потрібне якщо питання стосується загальних знань.
-    
-    Очікувані відповіді: {{"task":"answer", "is_vision_needed": true}}, 
-    {{"task":"answer", "search_query":"Погода в Харкові сьогодні"}}
+    Фото НЕ потрібне якщо питання стосується загальних знань.   
     НІКОЛИ НЕ ВІДПОВІДЙ ПРОСТО ТЕКСТОМ ВИКОРИСТОВУЙ JSON
     """
 

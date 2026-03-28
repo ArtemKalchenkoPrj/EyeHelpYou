@@ -30,14 +30,18 @@ async def voice_to_text(audio_buffer: io.BytesIO | None, max_seconds: int = 20) 
         await proc.wait()
 
         def _transcribe(path):
-            segments, _ = models.whisper_model.transcribe(path, language="uk")
-            return " ".join(segment.text for segment in segments)
+            with open(path, "rb") as audio_file:
+                transcription = models.whisper_model.audio.transcriptions.create(
+                    model="whisper-large-v3",
+                    file=audio_file,
+                    language="uk",
+                )
+            return transcription.text
 
         result = await asyncio.to_thread(_transcribe, tmp_trimmed_name)
 
     finally:
         os.remove(tmp_name)
-        # Видаляємо обрізаний файл якщо він існує
         if os.path.exists(tmp_trimmed_name):
             os.remove(tmp_trimmed_name)
 

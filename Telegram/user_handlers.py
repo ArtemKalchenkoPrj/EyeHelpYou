@@ -7,6 +7,7 @@ from aiogram.filters.command import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from langchain_core.exceptions import OutputParserException
 from langchain_core.messages import ToolMessage, AIMessage, HumanMessage
+from langsmith import traceable
 
 from Chains.text_to_voice import answer_to_user
 from utils import search_web, trim_history, unpack_history, logger
@@ -40,7 +41,7 @@ async def _get_image_from_message(message, bot):
     image_base64 = base64.b64encode(image_bytes).decode("utf-8")
     return image_base64
 
-
+@traceable(run_type="chain", name="Processor")
 async def handle_processor(router_response: ChainRouter,
                            state: FSMContext,
                            message: Message):
@@ -111,17 +112,21 @@ async def handle_processor(router_response: ChainRouter,
 
     messages = unpack_history(history)
 
-
     processor_response = await run_processor(bot_name, user_name, messages)
+    logger.debug(f"processor_response type: {type(processor_response)}, value: {repr(processor_response)}")
 
     history.append(AIMessage(processor_response))
 
     await state.set_state(UserState.wait_input)
+    logger.debug("Стан змінено на wait_input")
 
     await answer_to_user(message, processor_response)
-    await state.update_data(history = trim_history(history))
+    logger.debug("answer_to_user виконано")
 
+    await state.update_data(history=trim_history(history))
+    logger.debug("Історію збережено")
 
+@traceable(run_type="chain", name="Command")
 async def handle_command(command_response: ChainCommand, state: FSMContext, message: Message):
 
     state_data = await state.get_data()
@@ -163,21 +168,23 @@ async def handle_command(command_response: ChainCommand, state: FSMContext, mess
     await state.update_data(history = trim_history(history))
     await state.set_state(UserState.wait_input)
 
-
+@traceable(run_type="chain", name="Router")
 async def handle_router(question: str, state: FSMContext, message: Message):
     """Обробка результату роутера: ставить відповідний стан"""
     state_data = await state.get_data()
     history = state_data.get("history",[])
     history.append(HumanMessage(question))
 
-    history = trim_history(history)
+    # в роутер не має попадати tool_calls
+    filtered_history = [msg for msg in history if not isinstance(msg, list)]
+    filtered_messages = unpack_history(filtered_history)
 
-    messages = unpack_history(history)
-    while messages and isinstance(messages[-1], AIMessage):
-        messages = messages[:-1]
+    # Останнім повідомленням не може бути AiMessage
+    while filtered_messages and isinstance(filtered_messages[-1], AIMessage):
+        filtered_messages = filtered_messages[:-1]
 
     try:
-        router_response = await run_router(messages)
+        router_response = await run_router(filtered_messages)
 
         await state.update_data(history=history)
 

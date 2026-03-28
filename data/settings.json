@@ -4,8 +4,8 @@
   "DEFAULT_TTS_VOICE": "uk-UA-OstapNeural",
   "MIN_QUESTION_LENGTH": 5,
   "MAX_QUESTION_LENGTH": 250,
-  "VISION_MODEL_NAME": "qwen3.5:397b-cloud",
-  "COMMAND_MODEL_NAME": "ministral-3:14b-cloud",
-  "ROUTER_MODEL_NAME": "ministral-3:14b-cloud",
+  "VISION_MODEL_NAME": "google/gemini-2.5-flash",
+  "COMMAND_MODEL_NAME": "google/gemini-2.5-flash-lite",
+  "ROUTER_MODEL_NAME": "google/gemini-2.5-flash-lite",
   "ANSWER_TYPE": "text"
 }
