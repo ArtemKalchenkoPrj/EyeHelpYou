@@ -171,16 +171,49 @@ async def handle_command(command_response: ChainCommand, state: FSMContext, mess
     await state.set_state(UserState.wait_input)
 
 
+def _mask_tools(history):
+    _history = history.copy()
+    for i, msg in enumerate(_history):
+        if isinstance(msg, list):
+            ai_msg, tool_msg = msg
+            match tool_msg.tool_call_id:
+                case 'vision_result':
+                    _history[i] = [ai_msg, ToolMessage(content="Отримано фото", tool_call_id="vision_result")]
+                case 'search_result':
+                    _history[i] = [ai_msg, ToolMessage(content="Отримано дані пошуку", tool_call_id="search_result")]
+                case 'set_user_name':
+                    _history[i] = [ai_msg,
+                                   ToolMessage(content="Змінено ім'я користувача", tool_call_id="set_user_name")]
+                case 'set_bot_name':
+                    _history[i] = [ai_msg,
+                                   ToolMessage(content="Змінено твоє ім'я", tool_call_id="set_bot_name")]
+                case _:
+                    tool_call_id = ai_msg.tool_calls[0].get('id', "unknown")
+                    _history[i] = [ai_msg,
+                                   ToolMessage(content="НЕВІДОМИЙ ІНСТРУМЕНТ. ІГНОРУЙ ЦЕЙ ВИКЛИК",
+                                               tool_call_id=tool_call_id)]
+    return _history
+
+
+
 @traceable(run_type="chain", name="Router")
 async def handle_router(question: str, state: FSMContext, message: Message):
     """Обробка результату роутера: ставить відповідний стан"""
     state_data = await state.get_data()
     history = state_data.get("history",[])
-    human_question = HumanMessage(question)
-    history.append(human_question)
+    history.append(HumanMessage(question))
+
+    # щоб не плутати модель маскуємо реальні виклики на просто підтвердження того що виклик був
+    # плюс Router і Command моделі не обов'язково взагалі підтримують зображення
+    _history = _mask_tools(history)
+    messages = unpack_history(_history)
+
+    # останнім повідомленням не може бути AIMessage
+    while messages and isinstance(messages[-1], AIMessage):
+        messages.pop()
 
     try:
-        router_response = await run_router([human_question])
+        router_response = await run_router(messages)
 
         await state.update_data(history=history)
 
@@ -283,6 +316,7 @@ async def user_sent_photo(message: Message, state: FSMContext, bot: Bot):
         if not human_msg:
             await answer_to_user(message, "Фото отримано. Тепер, будь ласка, задайте питання")
             await state.set_state(UserState.wait_input)
+            await state.update_data(wait_image=image)
             return
         else:
             question = human_msg.content
