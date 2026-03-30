@@ -147,6 +147,7 @@ async def handle_command(command_response: ChainCommand, state: FSMContext, mess
                     tool_call_id="set_user_name"
                 )]
             )
+            history.append(AIMessage(f"Добре, тепер я буду називати вас {user_name}"))
             await state.update_data(user_name=user_name)
             await answer_to_user(message, f"Добре, тепер я буду називати вас {user_name}")
         case "set_bot_name":
@@ -162,29 +163,24 @@ async def handle_command(command_response: ChainCommand, state: FSMContext, mess
                     tool_call_id="set_bot_name"
                 )]
             )
+            history.append(AIMessage(f"Добре, тепер мене звуть {bot_name}"))
             await state.update_data(bot_name=bot_name)
             await answer_to_user(message, f"Добре, тепер мене звуть {bot_name}")
 
     await state.update_data(history = trim_history(history))
     await state.set_state(UserState.wait_input)
 
+
 @traceable(run_type="chain", name="Router")
 async def handle_router(question: str, state: FSMContext, message: Message):
     """Обробка результату роутера: ставить відповідний стан"""
     state_data = await state.get_data()
     history = state_data.get("history",[])
-    history.append(HumanMessage(question))
-
-    # в роутер не має попадати tool_calls
-    filtered_history = [msg for msg in history if not isinstance(msg, list)]
-    filtered_messages = unpack_history(filtered_history)
-
-    # Останнім повідомленням не може бути AiMessage
-    while filtered_messages and isinstance(filtered_messages[-1], AIMessage):
-        filtered_messages = filtered_messages[:-1]
+    human_question = HumanMessage(question)
+    history.append(human_question)
 
     try:
-        router_response = await run_router(filtered_messages)
+        router_response = await run_router([human_question])
 
         await state.update_data(history=history)
 
@@ -206,7 +202,7 @@ async def handle_router(question: str, state: FSMContext, message: Message):
         # відкочуємо історію до поперереднього людського повідомлення.
         if last_human_message:
             history = history[:last_human_message]
-        # якщо попереднє людське повідомлення - перше в історії, або його взагалінема - історія стирається
+        # якщо попереднє людське повідомлення - перше в історії, або його взагалі нема - історія стирається
         else:
             history = []
 
