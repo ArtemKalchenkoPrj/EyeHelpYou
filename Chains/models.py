@@ -16,7 +16,7 @@ command_model = None
 def _make_openrouter_llm(model_name: str, temperature: float = 0, **kwargs) -> ChatOpenAI:
     """Фабрика для створення ChatOpenAI, налаштованого на OpenRouter."""
     return ChatOpenAI(
-        reasoning={"effort": "none"},
+
         model=model_name,
         temperature=temperature,
         api_key=os.getenv("OPENROUTER_API_KEY"),
@@ -57,16 +57,18 @@ def load_models():
 
     whisper_model = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-    vision_model = _make_openrouter_llm(s.get("VISION_MODEL_NAME"))
+    vision_model = _make_openrouter_llm(s.get("VISION_MODEL_NAME"),reasoning={"effort": "none"},)
 
     router_model = _make_openrouter_llm(
         model_name=s.get("ROUTER_MODEL_NAME"),
-        model_kwargs={"response_format": {"type": "json_object"}},
+        model_kwargs={"response_format": {"type": "json_object"},},
+        reasoning={"effort": "low"}
     )
     router_model = router_model.with_structured_output(Router, method="json_mode")
 
     command_model = _make_openrouter_llm(
         model_name=s.get("COMMAND_MODEL_NAME"),
         model_kwargs={"response_format": {"type": "json_object"}},
+        reasoning={"effort": "low"}
     )
     command_model = command_model.with_structured_output(Command, method="json_mode")
