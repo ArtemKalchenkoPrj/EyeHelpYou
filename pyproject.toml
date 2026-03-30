@@ -7,13 +7,11 @@ dependencies = [
     "aiogram>=3.26.0",
     "ddgs>=9.11.2",
     "edge-tts>=7.2.7",
-    "faster-whisper>=1.2.1",
     "groq>=1.1.2",
     "langchain-core>=1.2.17",
     "langchain-openai>=1.1.10",
     "langsmith>=0.7.10",
     "pydantic>=2.12.5",
-    "pytest>=9.0.2",
     "python-dotenv>=1.2.1",
 ]
 
