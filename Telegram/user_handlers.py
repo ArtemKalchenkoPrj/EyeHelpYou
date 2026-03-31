@@ -229,65 +229,69 @@ async def handle_router(question: str, state: FSMContext, message: Message):
     _history = _mask_tools(history)
     messages = unpack_history(_history)
 
-    # останнім повідомленням не може бути AIMessage
-    while messages and isinstance(messages[-1], AIMessage):
-        messages.pop()
+    MAX_RETRIES = 2
 
-    try:
-        router_response = await run_router(messages)
+    for attempt in range(MAX_RETRIES):
+        try:
+            router_response = await run_router(messages)
 
-        await state.update_data(history=history)
+            await state.update_data(history=history)
 
-        match router_response.task:
-            case "command":
-                command_response = await run_command(question)
-                await handle_command(command_response, state, message)
-            case "answer":
-                await handle_processor(router_response, state, message)
+            match router_response.task:
+                case "command":
+                    command_response = await run_command(question)
+                    await handle_command(command_response, state, message)
+                case "answer":
+                    await handle_processor(router_response, state, message)
 
-    except OutputParserException as e:
-        error_message = "Вибачте, здається, виникла помилка на стороні серверу. Будь ласка, спробуйте ще раз"
-        last_human_message = None
-        for i, msg in reversed(list(enumerate(history))):
-            if isinstance(msg,HumanMessage):
-                    last_human_message = i
-                    break
+            break
+        except OutputParserException as e:
+            if attempt < MAX_RETRIES - 1:
+                logger.warning(f"Router retry {attempt + 1}/{MAX_RETRIES}: {e}")
+                continue
 
-        # відкочуємо історію до поперереднього людського повідомлення.
-        if last_human_message:
-            history = history[:last_human_message]
-        # якщо попереднє людське повідомлення - перше в історії, або його взагалі нема - історія стирається
-        else:
-            history = []
-
-        await answer_to_user(message, error_message)
-        await state.update_data(history=history)
-        await state.set_state(UserState.wait_input)
-
-        raise
-    except Exception as e:
-        error_message = ("Вибачте, я не можу обробити зображення. "
-                        "Можливо, воно містить матеріали делікатного характеру")
-        if "500" in str(e) or "Internal Server Error" in str(e):
-            bad_image_index = None
+            error_message = "Вибачте, здається, виникла помилка на стороні серверу. Будь ласка, спробуйте ще раз"
+            last_human_message = None
             for i, msg in reversed(list(enumerate(history))):
-                match msg:
-                    case [_, ToolMessage(tool_call_id="vision_result")]:
-                        bad_image_index = i
+                if isinstance(msg,HumanMessage):
+                        last_human_message = i
                         break
 
-            if bad_image_index is not None:
-                history[bad_image_index][1] = ToolMessage(content = error_message,
-                                                      tool_call_id="vision_result")
-
-                await answer_to_user(message, error_message)
-                await state.update_data(history=history)
-                await state.set_state(UserState.wait_input)
+            # відкочуємо історію до поперереднього людського повідомлення.
+            if last_human_message:
+                history = history[:last_human_message]
+            # якщо попереднє людське повідомлення - перше в історії, або його взагалі нема - історія стирається
             else:
-                logger.error("handle_router | vision_result not found in history")
-                await state.set_state(UserState.wait_input)
-        else:
+                history = []
+
+            await answer_to_user(message, error_message)
+            await state.update_data(history=history)
+            await state.set_state(UserState.wait_input)
+
             raise
+        except Exception as e:
+            error_message = ("Вибачте, я не можу обробити зображення. "
+                            "Можливо, воно містить матеріали делікатного характеру")
+            if "500" in str(e) or "Internal Server Error" in str(e):
+                bad_image_index = None
+                for i, msg in reversed(list(enumerate(history))):
+                    match msg:
+                        case [_, ToolMessage(tool_call_id="vision_result")]:
+                            bad_image_index = i
+                            break
+
+                if bad_image_index is not None:
+                    history[bad_image_index][1] = ToolMessage(content = error_message,
+                                                          tool_call_id="vision_result")
+
+                    await answer_to_user(message, error_message)
+                    await state.update_data(history=history)
+                    await state.set_state(UserState.wait_input)
+                else:
+                    logger.error("handle_router | vision_result not found in history")
+                    await state.set_state(UserState.wait_input)
+            else:
+                raise
 
 
 @user.message(CommandStart())
@@ -340,6 +344,22 @@ async def user_sent_photo(message: Message, state: FSMContext, bot: Bot):
             await state.update_data(wait_image=image)
             return
         else:
+            # Знаходимо індекс останнього human_msg
+            human_msg_index = next((i for i, msg in reversed(list(enumerate(history)))
+                                    if isinstance(msg, HumanMessage)), None)
+
+            # Перевіряємо чи після нього є tool_call пара
+            already_processed = any(
+                isinstance(msg, list) and len(msg) == 2
+                for msg in history[human_msg_index + 1:]
+            )
+
+            if already_processed:
+                await answer_to_user(message, "Будь ласка, задайте питання до фото")
+                await state.set_state(UserState.wait_input)
+                await state.update_data(wait_image=image)
+                return
+
             question = human_msg.content
 
     if not is_valid_question_length(question, message):
@@ -406,7 +426,7 @@ async def default_handler(message: Message):
 @user.errors()
 async def error_handler(event: ErrorEvent, bot):
     update = event.update
-    # Витягуємо юзера і його повідомлення залежно від типу апдейту
+    # Витягуємо користувача і його повідомлення
     user = update.message.from_user
     user_input = update.message.text or update.message.caption or "[не текст]"
 
