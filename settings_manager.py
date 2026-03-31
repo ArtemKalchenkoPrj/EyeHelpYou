@@ -9,10 +9,11 @@ DEFAULT_SETTINGS = {
   "DEFAULT_TTS_VOICE": "uk-UA-OstapNeural",
   "MIN_QUESTION_LENGTH": 5,
   "MAX_QUESTION_LENGTH": 250,
-  "VISION_MODEL_NAME": "qwen3.5:397b-cloud",
-  "COMMAND_MODEL_NAME": "ministral-3:14b-cloud",
-  "ROUTER_MODEL_NAME": "ministral-3:14b-cloud",
-  "ANSWER_TYPE": "voice"
+  "VISION_MODEL_NAME": "qwen/qwen3.5-397b-a17b",
+  "COMMAND_MODEL_NAME": "openai/gpt-oss-120b",
+  "ROUTER_MODEL_NAME": "openai/gpt-oss-120b",
+  "ANSWER_TYPE": "text",
+  "MAX_ANSWER_LENGTH": 250
 }
 
 _settings = {}
