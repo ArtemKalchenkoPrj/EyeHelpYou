@@ -51,6 +51,7 @@ async def answer_to_user(message: Message, text: str, answer_type: Literal['voic
     :param text: Текст голосового.
     :param answer_type: Яким чином буде виконуватися відповідь на повідомлення. voice - перетворення тексту на голосове, text - відповідь звичайним текстом
     """
+    replied_message = None
     if answer_type is None:
         answer_type = s.get('ANSWER_TYPE').lower().strip()
 
@@ -59,7 +60,7 @@ async def answer_to_user(message: Message, text: str, answer_type: Literal['voic
             clean_text, links = _extract_links(text)
             filtered_text = _filter_special_chars(clean_text)
             audio = await text_to_voice(filtered_text)
-            await message.reply_voice(
+            replied_message = await message.reply_voice(
                 voice=BufferedInputFile(file=audio.read(), filename="voice.ogg")
             )
             if links:
@@ -69,6 +70,7 @@ async def answer_to_user(message: Message, text: str, answer_type: Literal['voic
                 )
                 await message.answer(links)
         case 'text':
-            await message.reply(text)
+            replied_message = await message.reply(text)
         case _:
             raise NotImplementedError(f"answer_type {answer_type} is not supported.")
+    return replied_message
