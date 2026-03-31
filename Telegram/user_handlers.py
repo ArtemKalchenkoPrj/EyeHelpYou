@@ -1,9 +1,10 @@
 import base64
 import os
+import asyncio
 
 from aiogram import Router, F, Bot
 from aiogram.types import Message, ErrorEvent
-from aiogram.filters.command import CommandStart, Command
+from aiogram.filters.command import CommandStart
 from aiogram.fsm.context import FSMContext
 from langchain_core.exceptions import OutputParserException
 from langchain_core.messages import ToolMessage, AIMessage, HumanMessage
@@ -12,12 +13,34 @@ from langsmith import traceable
 from Chains.text_to_voice import answer_to_user
 from utils import search_web, trim_history, unpack_history, logger
 from Telegram.state import UserState
-
 from Chains import *
 import settings_manager as s
 
 
 user = Router()
+
+async def _handle_with_thinking_message(message: Message, coro):
+    """
+    Запускає корутину і якщо через 2 секунди немає відповіді —
+    надсилає повідомлення про очікування
+    """
+    thinking_message = None
+
+    async def send_thinking():
+        nonlocal thinking_message
+        await asyncio.sleep(2)
+        thinking_message = await answer_to_user(message, "Мені треба подумати, будь ласка, зачекайте")
+
+    thinking_task = asyncio.create_task(send_thinking())
+
+    try:
+        result = await coro
+    finally:
+        thinking_task.cancel()
+        if thinking_message:
+            await thinking_message.delete()
+
+    return result
 
 async def is_valid_question_length(question, message,
                                    min_question_length: int = s.get("MIN_QUESTION_LENGTH"),
@@ -91,8 +114,6 @@ async def handle_processor(router_response: ChainRouter,
             await state.set_state(UserState.wait_image)
             await state.update_data(history = trim_history(history), pending_router_response=router_response)
             return
-
-    await answer_to_user(message, "Мені треба подумати, це займе деякий час. Почекайте, будь ласка")
 
     # Є пошуковий запит - виконати пошук - додати в історію
     if search_query:
@@ -299,7 +320,7 @@ async def user_sent_text(message: Message, state: FSMContext):
     if not is_valid_question_length(question, message):
         return
 
-    await handle_router(question, state, message)
+    await _handle_with_thinking_message(message,handle_router(question, state, message))
 
 
 # Користувач відправив фото
@@ -325,7 +346,7 @@ async def user_sent_photo(message: Message, state: FSMContext, bot: Bot):
         return
 
     await state.update_data(wait_image=image)
-    await handle_router(question, state, message)
+    await _handle_with_thinking_message(message, handle_router(question, state, message))
 
 
 # Користувач відправив питання у вигляді голосового повідомлення
@@ -338,7 +359,7 @@ async def user_sent_voice(message: Message, state: FSMContext, bot: Bot):
     if not is_valid_question_length(question, message):
         return
 
-    await handle_router(question, state, message)
+    await _handle_with_thinking_message(message, handle_router(question, state, message))
 
 
 # Першим повідомленням користувач не відправив ні фото, ні текст, ні аудіо
@@ -357,7 +378,7 @@ async def cmd_wait_image(message: Message, state: FSMContext, bot: Bot):
     router_response = state_data["pending_router_response"]
 
     await state.update_data(wait_image=image, pending_router_response=None)
-    await handle_processor(router_response, state, message)
+    await _handle_with_thinking_message(message, handle_processor(router_response, state, message))
 
 
 # Очікувалося фото, а користувач відправив текст - обробити як текстове повідомлення
