@@ -7,5 +7,6 @@
   "VISION_MODEL_NAME": "qwen/qwen3.5-397b-a17b",
   "COMMAND_MODEL_NAME": "openai/gpt-oss-120b",
   "ROUTER_MODEL_NAME": "openai/gpt-oss-120b",
-  "ANSWER_TYPE": "text"
+  "ANSWER_TYPE": "text",
+  "MAX_ANSWER_LENGTH": 250
 }

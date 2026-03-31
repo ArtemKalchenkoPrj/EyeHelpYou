@@ -57,7 +57,10 @@ def load_models():
 
     whisper_model = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-    vision_model = _make_openrouter_llm(s.get("VISION_MODEL_NAME"),reasoning={"effort": "none"},)
+    vision_model = _make_openrouter_llm(s.get("VISION_MODEL_NAME"),
+                                        reasoning={"effort": "none"},
+                                        max_tokens=s.get("MAX_ANSWER_LENGTH", 250),
+                                        )
 
     router_model = _make_openrouter_llm(
         model_name=s.get("ROUTER_MODEL_NAME"),
