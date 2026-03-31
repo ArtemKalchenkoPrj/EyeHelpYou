@@ -405,6 +405,23 @@ async def default_handler(message: Message):
 
 @user.errors()
 async def error_handler(event: ErrorEvent, bot):
-    logger.exception(f"Помилка: {event.exception}")
+    update = event.update
+    # Витягуємо юзера і його повідомлення залежно від типу апдейту
+    user = update.message.from_user
+    user_input = update.message.text or update.message.caption or "[не текст]"
+
+    user_info = (
+        f"User ID: {user.id} | "
+        f"Username: @{user.username} | "
+        f"Ім'я: {user.first_name}"
+    ) if user else "User: невідомо"
+
+    logger.exception(
+        f"Помилка: {event.exception}\n"
+        f"{user_info}\n"
+        f"Інпут: {user_input}\n",
+        exc_info=event.exception
+    )
+
     admin_id = int(os.getenv("ADMIN_ID"))
-    await bot.send_message(admin_id, f"Помилка: {event.exception}")
+    await bot.send_message(admin_id, f"Помилка: {event.exception}\n{user_info}\nІнпут: {user_input}")
