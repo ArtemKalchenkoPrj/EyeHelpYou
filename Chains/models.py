@@ -65,13 +65,13 @@ def load_models():
     router_model = _make_openrouter_llm(
         model_name=s.get("ROUTER_MODEL_NAME"),
         model_kwargs={"response_format": {"type": "json_object"},},
-        reasoning={"effort": "low"}
+        #reasoning={"effort": "low"}
     )
     router_model = router_model.with_structured_output(Router, method="json_mode")
 
     command_model = _make_openrouter_llm(
         model_name=s.get("COMMAND_MODEL_NAME"),
         model_kwargs={"response_format": {"type": "json_object"}},
-        reasoning={"effort": "low"}
+        #reasoning={"effort": "low"}
     )
     command_model = command_model.with_structured_output(Command, method="json_mode")

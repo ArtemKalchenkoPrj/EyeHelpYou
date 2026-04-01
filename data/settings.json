@@ -5,8 +5,8 @@
   "MIN_QUESTION_LENGTH": 5,
   "MAX_QUESTION_LENGTH": 250,
   "VISION_MODEL_NAME": "qwen/qwen3.5-397b-a17b",
-  "COMMAND_MODEL_NAME": "openai/gpt-oss-120b",
-  "ROUTER_MODEL_NAME": "openai/gpt-oss-120b",
+  "COMMAND_MODEL_NAME": "xiaomi/mimo-v2-flash",
+  "ROUTER_MODEL_NAME": "xiaomi/mimo-v2-flash",
   "ANSWER_TYPE": "text",
   "MAX_ANSWER_LENGTH": 250
 }
