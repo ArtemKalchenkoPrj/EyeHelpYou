@@ -1,9 +1,9 @@
 import os
 from typing import Literal, Optional
 
-from pydantic import BaseModel
-from langchain_openai import ChatOpenAI
 from groq import Groq
+from langchain_openai import ChatOpenAI
+from pydantic import BaseModel
 
 import settings_manager as s
 
@@ -63,7 +63,7 @@ def load_models():
 
     primary_router = _make_openrouter_llm(
         model_name=s.get("ROUTER_MODEL_NAME"),
-        model_kwargs={"response_format": {"type": "json_object"},},
+        model_kwargs={"response_format": {"type": "json_object"}, },
         reasoning={"effort": "none"}
     )
     fallback_router1 = _make_openrouter_llm(
@@ -79,9 +79,21 @@ def load_models():
     router_llm = primary_router.with_fallbacks([fallback_router1, fallback_router2])
     router_model = router_llm.with_structured_output(Router, method="json_mode")
 
-    command_model = _make_openrouter_llm(
+
+    primary_command = _make_openrouter_llm(
         model_name=s.get("COMMAND_MODEL_NAME"),
-        model_kwargs={"response_format": {"type": "json_object"}},
-        reasoning={"effort": "low"}
+        model_kwargs={"response_format": {"type": "json_object"}, },
+        reasoning={"effort": "none"}
     )
-    command_model = command_model.with_structured_output(Command, method="json_mode")
+    fallback_command1 = _make_openrouter_llm(
+        model_name=s.get("COMMAND_FALLBACK1"),
+        model_kwargs={"response_format": {"type": "json_object"}, },
+        reasoning={"effort": "none"}
+    )
+    fallback_command2 = _make_openrouter_llm(
+        model_name=s.get("COMMAND_FALLBACK2"),
+        model_kwargs={"response_format": {"type": "json_object"}, },
+        reasoning={"effort": "none"}
+    )
+    command_llm = primary_command.with_fallbacks([fallback_command1, fallback_command2])
+    command_model = command_llm.with_structured_output(Command, method="json_mode")
