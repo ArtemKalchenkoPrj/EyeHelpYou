@@ -6,6 +6,7 @@ class UserState(StatesGroup):
     bot_name = State()
     history = State()
     pending_router_response = State()
+    answer_type = State()
 
     # стейти для обробки за допомогою хендлерів
     wait_input = State()

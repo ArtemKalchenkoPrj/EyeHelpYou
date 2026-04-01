@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from _contextvars import ContextVar
 from urllib.parse import urlparse
 
 from ddgs import DDGS
@@ -9,6 +10,9 @@ from langsmith import traceable
 import settings_manager as s
 
 logger = logging.getLogger("Chains")
+
+
+current_answer_type: ContextVar[str] = ContextVar('answer_type', default=None)
 
 @traceable(run_type="retriever")
 async def search_web(query: str, max_results: int=5) -> str:

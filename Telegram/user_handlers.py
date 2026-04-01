@@ -11,7 +11,7 @@ from langchain_core.messages import ToolMessage, AIMessage, HumanMessage
 from langsmith import traceable
 
 from Chains.text_to_voice import answer_to_user
-from utils import search_web, trim_history, unpack_history, logger
+from utils import search_web, trim_history, unpack_history, logger, current_answer_type
 from Telegram.state import UserState
 from Chains import *
 import settings_manager as s
@@ -112,7 +112,7 @@ async def handle_processor(router_response: ChainRouter,
             await answer_to_user(message, "Здається, я не можу відповісти на це питання без зображення."
                                           "Чи не могли б ви його надати, будь ласка?")
             await state.set_state(UserState.wait_image)
-            await state.update_data(history = trim_history(history), pending_router_response=router_response)
+            await state.update_data(history=trim_history(history), pending_router_response=router_response)
             return
 
     # Є пошуковий запит - виконати пошук - додати в історію
@@ -123,10 +123,10 @@ async def handle_processor(router_response: ChainRouter,
                 content=f"Пошукаю інформацію в інтернеті за запитом: {search_query}",
                 tool_calls=[{"id": "search_result", "name": "search", "args": {"search_query": search_query}}]
             ),
-            ToolMessage(
-                content=search_result,
-                tool_call_id="search_result"
-            )]
+                ToolMessage(
+                    content=search_result,
+                    tool_call_id="search_result"
+                )]
         )
 
     logger.debug(f"History types: {[type(m).__name__ for m in history]}")
@@ -147,12 +147,12 @@ async def handle_processor(router_response: ChainRouter,
     await state.update_data(history=trim_history(history))
     logger.debug("Історію збережено")
 
+
 @traceable(run_type="chain", name="Command")
 async def handle_command(command_response: ChainCommand, state: FSMContext, message: Message):
-
     state_data = await state.get_data()
 
-    history = state_data.get("history",[])
+    history = state_data.get("history", [])
 
     match command_response.command:
         case "set_user_name":
@@ -160,13 +160,13 @@ async def handle_command(command_response: ChainCommand, state: FSMContext, mess
             old_name = state_data.get("user_name", "невідомо")
             history.append(
                 [AIMessage(
-                content=f"Зміню ім'я користувача з {old_name} на {user_name}",
-                tool_calls=[{"id": "set_user_name", "name": "set_user_name", "args": {"name": user_name}}]
+                    content=f"Зміню ім'я користувача з {old_name} на {user_name}",
+                    tool_calls=[{"id": "set_user_name", "name": "set_user_name", "args": {"name": user_name}}]
                 ),
-                ToolMessage(
-                    content=f"Тепер ім'я користувача - {user_name}",
-                    tool_call_id="set_user_name"
-                )]
+                    ToolMessage(
+                        content=f"Тепер ім'я користувача - {user_name}",
+                        tool_call_id="set_user_name"
+                    )]
             )
             history.append(AIMessage(f"Добре, тепер я буду називати вас {user_name}"))
             await state.update_data(user_name=user_name)
@@ -179,16 +179,34 @@ async def handle_command(command_response: ChainCommand, state: FSMContext, mess
                     content=f"Зміню своє ім'я з {old_bot_name} на {bot_name}",
                     tool_calls=[{"id": "set_bot_name", "name": "set_bot_name", "args": {"name": bot_name}}]
                 ),
-                ToolMessage(
-                    content=f"Тепер твоє ім'я - {bot_name}",
-                    tool_call_id="set_bot_name"
-                )]
+                    ToolMessage(
+                        content=f"Тепер твоє ім'я - {bot_name}",
+                        tool_call_id="set_bot_name"
+                    )]
             )
             history.append(AIMessage(f"Добре, тепер мене звуть {bot_name}"))
             await state.update_data(bot_name=bot_name)
             await answer_to_user(message, f"Добре, тепер мене звуть {bot_name}")
+        case "set_answer_type":
+            new_answer_type = command_response.command_argument
+            old_answer_type = state_data.get("answer_type", s.get('ANSWER_TYPE'))
 
-    await state.update_data(history = trim_history(history))
+            history.append(
+                [AIMessage(
+                    content=f"Зміню тип відповіді з {old_answer_type} на {new_answer_type}",
+                    tool_calls=[{"id": "set_answer_type", "name": "set_answer_type", "args": {"name": new_answer_type}}]
+                ),
+                    ToolMessage(
+                        content=f"Тепер тип відповіді - {new_answer_type}",
+                        tool_call_id="set_answer_type"
+                    )]
+            )
+            history.append(AIMessage(f"Новий тип відповіді - {new_answer_type}"))
+            await state.update_data(answer_type=new_answer_type)
+            current_answer_type.set(new_answer_type)
+            await answer_to_user(message, f"Новий тип відповіді - {new_answer_type}")
+
+    await state.update_data(history=trim_history(history))
     await state.set_state(UserState.wait_input)
 
 
@@ -199,15 +217,20 @@ def _mask_tools(history):
             ai_msg, tool_msg = msg
             match tool_msg.tool_call_id:
                 case 'vision_result':
-                    _history[i] = [ai_msg, ToolMessage(content="Отримано фото", tool_call_id="vision_result")]
+                    _history[i] = [ai_msg,
+                                   ToolMessage(content="Команду виконано. Отримано фото. Чекаю на наступне питання.", tool_call_id="vision_result")]
                 case 'search_result':
-                    _history[i] = [ai_msg, ToolMessage(content="Отримано дані пошуку", tool_call_id="search_result")]
+                    _history[i] = [ai_msg,
+                                   ToolMessage(content="Команду виконано. Отримано дані пошуку. Чекаю на наступне питання.", tool_call_id="search_result")]
                 case 'set_user_name':
                     _history[i] = [ai_msg,
-                                   ToolMessage(content="Змінено ім'я користувача", tool_call_id="set_user_name")]
+                                   ToolMessage(content="Команду виконано. Змінено ім'я користувача. Чекаю на наступне питання.", tool_call_id="set_user_name")]
                 case 'set_bot_name':
                     _history[i] = [ai_msg,
-                                   ToolMessage(content="Змінено твоє ім'я", tool_call_id="set_bot_name")]
+                                   ToolMessage(content="Команду виконано. Змінено твоє ім'я. Чекаю на наступне питання.", tool_call_id="set_bot_name")]
+                case 'set_answer_type':
+                    _history[i] = [ai_msg,
+                                   ToolMessage(content=f"Команду виконано. Тип відповіді змінено. Чекаю на наступне питання.", tool_call_id="set_answer_type")]
                 case _:
                     tool_call_id = ai_msg.tool_calls[0].get('id', "unknown")
                     _history[i] = [ai_msg,
@@ -216,12 +239,11 @@ def _mask_tools(history):
     return _history
 
 
-
 @traceable(run_type="chain", name="Router")
 async def handle_router(question: str, state: FSMContext, message: Message):
     """Обробка результату роутера: ставить відповідний стан"""
     state_data = await state.get_data()
-    history = state_data.get("history",[])
+    history = state_data.get("history", [])
     history.append(HumanMessage(question))
 
     # щоб не плутати модель маскуємо реальні виклики на просто підтвердження того що виклик був
@@ -253,9 +275,9 @@ async def handle_router(question: str, state: FSMContext, message: Message):
             error_message = "Вибачте, здається, виникла помилка на стороні серверу. Будь ласка, спробуйте ще раз"
             last_human_message = None
             for i, msg in reversed(list(enumerate(history))):
-                if isinstance(msg,HumanMessage):
-                        last_human_message = i
-                        break
+                if isinstance(msg, HumanMessage):
+                    last_human_message = i
+                    break
 
             # відкочуємо історію до поперереднього людського повідомлення.
             if last_human_message:
@@ -271,7 +293,7 @@ async def handle_router(question: str, state: FSMContext, message: Message):
             raise
         except Exception as e:
             error_message = ("Вибачте, я не можу обробити зображення. "
-                            "Можливо, воно містить матеріали делікатного характеру")
+                             "Можливо, воно містить матеріали делікатного характеру")
             if "500" in str(e) or "Internal Server Error" in str(e):
                 bad_image_index = None
                 for i, msg in reversed(list(enumerate(history))):
@@ -281,8 +303,8 @@ async def handle_router(question: str, state: FSMContext, message: Message):
                             break
 
                 if bad_image_index is not None:
-                    history[bad_image_index][1] = ToolMessage(content = error_message,
-                                                          tool_call_id="vision_result")
+                    history[bad_image_index][1] = ToolMessage(content=error_message,
+                                                              tool_call_id="vision_result")
 
                     await answer_to_user(message, error_message)
                     await state.update_data(history=history)
@@ -297,6 +319,8 @@ async def handle_router(question: str, state: FSMContext, message: Message):
 @user.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
+
+    await state.update_data(answer_type=s.get('ANSWER_TYPE'))
     user_name = message.from_user.first_name
     default_bot_name = s.get("DEFAULT_BOT_NAME")
     await state.update_data(bot_name=default_bot_name, user_name=user_name)
@@ -307,15 +331,19 @@ async def cmd_start(message: Message, state: FSMContext):
                      f"Я також можу знайти якусь інформацію в інтернеті. "
                      f"Якщо вам не подобається моє ім'я, або те як я Вас називаю - попросіть змінити ім'я. "
                      f"Щоб розпочати роботу надішліть повідомлення, або фотографію."
-                     f"Ви можете використовувати як текст так і аудіо - повідомлення.")
+                     f"Ви можете використовувати як текст так і аудіо повідомлення."
+                     f"Якщо хочете змінити тип моїх відповідей з голосових повідомлень на текст - просто попросіть.")
 
     await answer_to_user(message, hello_message)
 
     await state.set_state(UserState.wait_input)
 
+
+
 @user.message(F.text.startswith("/"))
 async def unknown_command(message: Message):
     await answer_to_user(message, "Невідома команда")
+
 
 # Користувач вводить запитання текстом
 @user.message(UserState.wait_input, F.text)
@@ -324,7 +352,7 @@ async def user_sent_text(message: Message, state: FSMContext):
     if not is_valid_question_length(question, message):
         return
 
-    await _handle_with_thinking_message(message,handle_router(question, state, message))
+    await _handle_with_thinking_message(message, handle_router(question, state, message))
 
 
 # Користувач відправив фото
@@ -386,7 +414,7 @@ async def user_sent_voice(message: Message, state: FSMContext, bot: Bot):
 @user.message(UserState.wait_input)
 async def wait_input_default_handler(message: Message):
     await answer_to_user(message, "Вибачте, здається, я не можу це обробити, будь ласка, "
-                               "спробуйте надіслати фото, текст, або аудіо")
+                                  "спробуйте надіслати фото, текст, або аудіо")
 
 
 # Роутер вирішив, що потрібне фото, а фото немає

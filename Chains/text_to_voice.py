@@ -10,6 +10,7 @@ from aiogram.types import BufferedInputFile, Message
 import re
 
 import settings_manager as s
+from utils import current_answer_type
 
 logger = logging.getLogger("Chains")
 
@@ -53,7 +54,9 @@ async def answer_to_user(message: Message, text: str, answer_type: Literal['voic
     """
     replied_message = None
     if answer_type is None:
-        answer_type = s.get('ANSWER_TYPE').lower().strip()
+        answer_type = current_answer_type.get() or s.get('ANSWER_TYPE')
+
+    answer_type = answer_type.lower().strip()
 
     match answer_type:
         case 'voice':

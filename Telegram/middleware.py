@@ -1,10 +1,13 @@
 import os
 
 from aiogram import BaseMiddleware
-from aiogram.types import BufferedInputFile
+from aiogram.fsm.context import FSMContext
+from aiogram.types import BufferedInputFile, Message
 
 from Chains import text_to_voice
 import settings_manager as s
+from utils import current_answer_type
+
 
 class ThrottlingMiddleware(BaseMiddleware):
     def __init__(self):
@@ -31,3 +34,14 @@ class ThrottlingMiddleware(BaseMiddleware):
             return await handler(event, data)
         finally:
             self.processing.discard(user_id)
+
+
+class AnswerTypeMiddleware(BaseMiddleware):
+    async def __call__(self, handler, event: Message, data: dict):
+        state: FSMContext = data.get("state")
+        if state:
+            state_data = await state.get_data()
+            answer_type = state_data.get("answer_type", s.get('ANSWER_TYPE'))
+            current_answer_type.set(answer_type)
+
+        return await handler(event, data)
