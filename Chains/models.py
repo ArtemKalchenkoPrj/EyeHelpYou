@@ -16,7 +16,6 @@ command_model = None
 def _make_openrouter_llm(model_name: str, temperature: float = 0, **kwargs) -> ChatOpenAI:
     """Фабрика для створення ChatOpenAI, налаштованого на OpenRouter."""
     return ChatOpenAI(
-
         model=model_name,
         temperature=temperature,
         api_key=os.getenv("OPENROUTER_API_KEY"),
@@ -62,16 +61,27 @@ def load_models():
                                         max_tokens=s.get("MAX_ANSWER_LENGTH", 250),
                                         )
 
-    router_model = _make_openrouter_llm(
+    primary_router = _make_openrouter_llm(
         model_name=s.get("ROUTER_MODEL_NAME"),
         model_kwargs={"response_format": {"type": "json_object"},},
-        #reasoning={"effort": "low"}
+        reasoning={"effort": "none"}
     )
-    router_model = router_model.with_structured_output(Router, method="json_mode")
+    fallback_router1 = _make_openrouter_llm(
+        model_name=s.get("ROUTER_FALLBACK1"),
+        model_kwargs={"response_format": {"type": "json_object"}, },
+        reasoning={"effort": "none"}
+    )
+    fallback_router2 = _make_openrouter_llm(
+        model_name=s.get("ROUTER_FALLBACK2"),
+        model_kwargs={"response_format": {"type": "json_object"}, },
+        reasoning={"effort": "none"}
+    )
+    router_llm = primary_router.with_fallbacks([fallback_router1, fallback_router2])
+    router_model = router_llm.with_structured_output(Router, method="json_mode")
 
     command_model = _make_openrouter_llm(
         model_name=s.get("COMMAND_MODEL_NAME"),
         model_kwargs={"response_format": {"type": "json_object"}},
-        #reasoning={"effort": "low"}
+        reasoning={"effort": "low"}
     )
     command_model = command_model.with_structured_output(Command, method="json_mode")

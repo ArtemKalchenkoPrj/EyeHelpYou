@@ -7,6 +7,8 @@
   "VISION_MODEL_NAME": "qwen/qwen3.5-397b-a17b",
   "COMMAND_MODEL_NAME": "xiaomi/mimo-v2-flash",
   "ROUTER_MODEL_NAME": "xiaomi/mimo-v2-flash",
+  "ROUTER_FALLBACK1": "z-ai/glm-4.7-flash",
+  "ROUTER_FALLBACK2": "qwen/qwen3-235b-a22b-2507",
   "ANSWER_TYPE": "text",
   "MAX_ANSWER_LENGTH": 250
 }
