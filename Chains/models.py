@@ -2,6 +2,7 @@ import os
 from typing import Literal, Optional
 
 from groq import Groq
+from langchain_core.runnables import RunnableLambda
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
 
@@ -11,6 +12,14 @@ whisper_model = None
 vision_model = None
 router_model = None
 command_model = None
+
+
+def _validate_output(response):
+    content = response.content
+
+    if not content or (isinstance(content, str) and content.strip() == ""):
+        raise ValueError("Empty response from model")
+    return response
 
 
 def _make_openrouter_llm(model_name: str, temperature: float = 0, **kwargs) -> ChatOpenAI:
@@ -56,10 +65,26 @@ def load_models():
 
     whisper_model = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-    vision_model = _make_openrouter_llm(s.get("VISION_MODEL_NAME"),
-                                        reasoning={"effort": "none"},
-                                        max_tokens=s.get("MAX_ANSWER_LENGTH", 250),
-                                        )
+
+    primary_vision = _make_openrouter_llm(s.get("VISION_MODEL_NAME"),
+                                            reasoning={"effort": "none"},
+                                            max_tokens=s.get("MAX_ANSWER_LENGTH", 250),
+                                            )
+    fallback_vision1 = _make_openrouter_llm(s.get("VISION_FALLBACK1"),
+                                            reasoning={"effort": "none"},
+                                            max_tokens=s.get("MAX_ANSWER_LENGTH", 250),
+                                            )
+    fallback_vision2 = _make_openrouter_llm(s.get("VISION_FALLBACK2"),
+                                            reasoning={"effort": "none"},
+                                            max_tokens=s.get("MAX_ANSWER_LENGTH", 250),
+                                            )
+
+    primary_chain = primary_vision | RunnableLambda(_validate_output)
+    fallback_vision1_chain = fallback_vision1 | RunnableLambda(_validate_output)
+    fallback_vision2_chain = fallback_vision2 | RunnableLambda(_validate_output)
+
+    vision_model = primary_chain.with_fallbacks([fallback_vision1_chain, fallback_vision2_chain])
+
 
     primary_router = _make_openrouter_llm(
         model_name=s.get("ROUTER_MODEL_NAME"),

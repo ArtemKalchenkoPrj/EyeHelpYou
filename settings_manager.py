@@ -12,7 +12,9 @@ DEFAULT_SETTINGS = {
   "MIN_QUESTION_LENGTH": 5,
   "MAX_QUESTION_LENGTH": 250,
 
-  "VISION_MODEL_NAME": "qwen/qwen3.5-397b-a17b",
+  "VISION_MODEL_NAME": "google/gemini-3-flash-preview",
+  "VISION_FALLBACK1": "qwen/qwen3.5-397b-a17b",
+  "VISION_FALLBACK2": "xiaomi/mimo-v2-omni",
 
   "ROUTER_MODEL_NAME": "xiaomi/mimo-v2-flash",
   "ROUTER_FALLBACK1": "z-ai/glm-4.7-flash",
