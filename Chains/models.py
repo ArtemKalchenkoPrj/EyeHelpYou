@@ -51,10 +51,11 @@ class Command(BaseModel):
     command - команда
     command_argument - аргумент команди
 
-    Достпні команди: set_user_name, set_bot_name
+    Доступні команди: set_user_name, set_bot_name, set_answer_type
     """
     command: Literal["set_user_name","set_bot_name","set_answer_type"]
     command_argument: str
+
 
 def load_models():
 

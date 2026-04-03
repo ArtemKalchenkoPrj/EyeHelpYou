@@ -26,7 +26,7 @@ def _extract_links(text: str) -> tuple[str, str]:
     return clean_text, links
 
 def _filter_special_chars(text: str) -> str:
-    allowed = r"a-zA-Zа-яА-ЯіІїЇєЄґҐ0-9\s.,!?"
+    allowed = r"a-zA-Zа-яА-ЯіІїЇєЄґҐ0-9\s.,!?:;()\"-"
     pattern = f"[^{allowed}]"
     return re.sub(pattern, "", text)
 
@@ -61,17 +61,18 @@ async def answer_to_user(message: Message, text: str, answer_type: Literal['voic
     match answer_type:
         case 'voice':
             clean_text, links = _extract_links(text)
+
+            if links:
+                clean_text += ". Я також надіслав посилання окремим текстом."
+
             filtered_text = _filter_special_chars(clean_text)
             audio = await text_to_voice(filtered_text)
-            replied_message = await message.reply_voice(
-                voice=BufferedInputFile(file=audio.read(), filename="voice.ogg")
+
+            await message.reply_voice(
+                voice=BufferedInputFile(file=audio.getvalue(), filename="voice.ogg")
             )
             if links:
-                audio = await text_to_voice("Також посилання")
-                await message.reply_voice(
-                    voice=BufferedInputFile(file=audio.read(), filename="voice.ogg")
-                )
-                await message.answer(links)
+                await message.answer(links, disable_web_page_preview=False)
         case 'text':
             replied_message = await message.reply(text)
         case _:

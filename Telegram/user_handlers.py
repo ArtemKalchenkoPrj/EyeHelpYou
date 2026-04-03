@@ -43,8 +43,13 @@ async def _handle_with_thinking_message(message: Message, coro):
     return result
 
 async def is_valid_question_length(question, message,
-                                   min_question_length: int = s.get("MIN_QUESTION_LENGTH"),
-                                   max_question_length: int = s.get("MAX_QUESTION_LENGTH")) -> bool:
+                                   min_question_length: int = None,
+                                   max_question_length: int = None) -> bool:
+    if min_question_length is None:
+        min_question_length: int = s.get("MIN_QUESTION_LENGTH")
+    if max_question_length is None:
+        max_question_length: int = s.get("MAX_QUESTION_LENGTH")
+
     if len(question.strip())<=min_question_length:
         await answer_to_user(message, "Вибачте, я не можу відповісти на таке коротке запитання. "
                                       "Будь ласка, надайте більш розгорнуте питання")
@@ -220,8 +225,7 @@ def _mask_tools(history):
                     _history[i] = [ai_msg,
                                    ToolMessage(content="Команду виконано. Отримано фото. Чекаю на наступне питання.", tool_call_id="vision_result")]
                 case 'search_result':
-                    _history[i] = [ai_msg,
-                                   ToolMessage(content="Команду виконано. Отримано дані пошуку. Чекаю на наступне питання.", tool_call_id="search_result")]
+                    pass
                 case 'set_user_name':
                     _history[i] = [ai_msg,
                                    ToolMessage(content="Команду виконано. Змінено ім'я користувача. Чекаю на наступне питання.", tool_call_id="set_user_name")]
@@ -349,7 +353,7 @@ async def unknown_command(message: Message):
 @user.message(UserState.wait_input, F.text)
 async def user_sent_text(message: Message, state: FSMContext):
     question = message.text
-    if not is_valid_question_length(question, message):
+    if not await is_valid_question_length(question, message):
         return
 
     await _handle_with_thinking_message(message, handle_router(question, state, message))
@@ -390,7 +394,7 @@ async def user_sent_photo(message: Message, state: FSMContext, bot: Bot):
 
             question = human_msg.content
 
-    if not is_valid_question_length(question, message):
+    if not await is_valid_question_length(question, message):
         return
 
     await state.update_data(wait_image=image)
@@ -404,7 +408,7 @@ async def user_sent_voice(message: Message, state: FSMContext, bot: Bot):
     buffer.seek(0)
     question = await voice_to_text(buffer)
 
-    if not is_valid_question_length(question, message):
+    if not await is_valid_question_length(question, message):
         return
 
     await _handle_with_thinking_message(message, handle_router(question, state, message))
