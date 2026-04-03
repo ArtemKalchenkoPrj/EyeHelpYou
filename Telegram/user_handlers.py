@@ -380,9 +380,10 @@ async def user_sent_photo(message: Message, state: FSMContext, bot: Bot):
             human_msg_index = next((i for i, msg in reversed(list(enumerate(history)))
                                     if isinstance(msg, HumanMessage)), None)
 
-            # Перевіряємо чи після нього є tool_call пара
+            # Перевіряємо чи після нього є tool_call пара із виконанням команди
+            commands = ['set_bot_name','set_user_name','set_answer_type']
             already_processed = any(
-                isinstance(msg, list) and len(msg) == 2
+                isinstance(msg, list) and msg[1].tool_call_id in commands
                 for msg in history[human_msg_index + 1:]
             )
 
