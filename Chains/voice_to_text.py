@@ -4,8 +4,22 @@ import asyncio
 import os
 from Chains import models
 import logging
+import pydub
 
 logger = logging.getLogger("Chains")
+
+
+async def is_speech_loud_enough(audio_path: str, threshold_db: float = -35.0) -> bool:
+    def _check_loudness_sync():
+        try:
+            audio = pydub.AudioSegment.from_file(audio_path)
+            # dBFS — це середня гучність відносно максимально можливої (0 dB)
+            return audio.dBFS > threshold_db
+        except Exception as e:
+            logger.error(f"Помилка при аналізі гучності: {e}")
+            return False
+
+    return await asyncio.to_thread(_check_loudness_sync)
 
 
 async def voice_to_text(audio_buffer: io.BytesIO | None, max_seconds: int = 20) -> str:
@@ -36,6 +50,12 @@ async def voice_to_text(audio_buffer: io.BytesIO | None, max_seconds: int = 20) 
 
             try:
                 await asyncio.wait_for(proc.wait(), timeout=10.0)
+
+                # Додаємо перевірку гучності
+                if not await is_speech_loud_enough(output_path):
+                    logger.info("Аудіо занадто тихе (ймовірно шум або порожнеча).")
+                    return ""
+
             except asyncio.TimeoutError:
                 proc.kill()
                 logger.error("FFMPEG timeout")
@@ -52,6 +72,7 @@ async def voice_to_text(audio_buffer: io.BytesIO | None, max_seconds: int = 20) 
                         model="whisper-large-v3",
                         file=audio_file,
                         language="uk",
+                        temperature=0,
                     )
                 return transcription.text
 

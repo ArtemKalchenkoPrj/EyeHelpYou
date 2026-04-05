@@ -5,6 +5,7 @@ description = "Add your description here"
 requires-python = ">=3.14"
 dependencies = [
     "aiogram>=3.26.0",
+    "audioop-lts>=0.2.2",
     "ddgs>=9.11.2",
     "edge-tts>=7.2.7",
     "groq>=1.1.2",
@@ -12,6 +13,7 @@ dependencies = [
     "langchain-openai>=1.1.10",
     "langsmith>=0.7.10",
     "pydantic>=2.12.5",
+    "pydub>=0.25.1",
     "python-dotenv>=1.2.1",
 ]
 
