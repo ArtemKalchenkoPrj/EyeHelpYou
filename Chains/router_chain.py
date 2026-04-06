@@ -1,13 +1,13 @@
 from datetime import datetime
 
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import SystemMessage, HumanMessage
 from langsmith import traceable
 
 from Chains import models
 from utils import logger
 
 @traceable(run_type="llm", name="Router")
-async def run_router(history: list) -> models.Router:
+async def run_router(question: str) -> models.Router:
     current_date = datetime.now().strftime("%d.%m.%Y %H:%M")
     system = f"""
     ВІДПОВІДАЙ ВИКЛЮЧНО У ФОРМАТІ JSON
@@ -32,7 +32,7 @@ async def run_router(history: list) -> models.Router:
     НІКОЛИ НЕ ВІДПОВІДЙ ПРОСТО ТЕКСТОМ ВИКОРИСТОВУЙ JSON
     """
 
-    messages = [SystemMessage(content=system)] + history
+    messages = [SystemMessage(content=system), HumanMessage(content=question)]
 
     logger.debug("Я думаю")
     response = await models.router_model.ainvoke(messages)

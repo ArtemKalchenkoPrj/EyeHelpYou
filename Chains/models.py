@@ -5,7 +5,7 @@ from groq import Groq
 from langchain_core.runnables import RunnableLambda
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
-
+from Chains.command_chain import set_user_name, set_bot_name, set_answer_type
 import settings_manager as s
 
 whisper_model = None
@@ -22,13 +22,14 @@ def _validate_output(response):
     return response
 
 
-def _make_openrouter_llm(model_name: str, temperature: float = 0, **kwargs) -> ChatOpenAI:
+def _make_openrouter_llm(model_name: str, temperature: float = 0, base_url="https://openrouter.ai/api/v1", **kwargs) -> ChatOpenAI:
     """Фабрика для створення ChatOpenAI, налаштованого на OpenRouter."""
+
     return ChatOpenAI(
         model=model_name,
+        base_url=base_url,
         temperature=temperature,
         api_key=os.getenv("OPENROUTER_API_KEY"),
-        base_url="https://openrouter.ai/api/v1",
         default_headers={
             "HTTP-Referer": "https://eye-help-you.fly.dev",
             "X-Title": "EyeHelpYou_tg_bot",
@@ -45,17 +46,6 @@ class Router(BaseModel):
     task: Literal["answer","command"]
     search_query: Optional[str] = None
     is_vision_needed: Optional[bool] = None
-
-class Command(BaseModel):
-    """
-    command - команда
-    command_argument - аргумент команди
-
-    Доступні команди: set_user_name, set_bot_name, set_answer_type
-    """
-    command: Literal["set_user_name","set_bot_name","set_answer_type"]
-    command_argument: str
-
 
 def load_models():
 
@@ -88,18 +78,18 @@ def load_models():
 
 
     primary_router = _make_openrouter_llm(
+        temperature=0,
         model_name=s.get("ROUTER_MODEL_NAME"),
-        model_kwargs={"response_format": {"type": "json_object"}, },
         reasoning={"effort": "none"}
     )
     fallback_router1 = _make_openrouter_llm(
+        temperature=0,
         model_name=s.get("ROUTER_FALLBACK1"),
-        model_kwargs={"response_format": {"type": "json_object"}, },
         reasoning={"effort": "none"}
     )
     fallback_router2 = _make_openrouter_llm(
+        temperature=0,
         model_name=s.get("ROUTER_FALLBACK2"),
-        model_kwargs={"response_format": {"type": "json_object"}, },
         reasoning={"effort": "none"}
     )
     router_llm = primary_router.with_fallbacks([fallback_router1, fallback_router2])
@@ -107,19 +97,20 @@ def load_models():
 
 
     primary_command = _make_openrouter_llm(
+        temperature=0,
         model_name=s.get("COMMAND_MODEL_NAME"),
-        model_kwargs={"response_format": {"type": "json_object"}, },
         reasoning={"effort": "none"}
     )
     fallback_command1 = _make_openrouter_llm(
+        temperature=0,
         model_name=s.get("COMMAND_FALLBACK1"),
-        model_kwargs={"response_format": {"type": "json_object"}, },
         reasoning={"effort": "none"}
     )
     fallback_command2 = _make_openrouter_llm(
+        temperature=0,
         model_name=s.get("COMMAND_FALLBACK2"),
-        model_kwargs={"response_format": {"type": "json_object"}, },
         reasoning={"effort": "none"}
     )
     command_llm = primary_command.with_fallbacks([fallback_command1, fallback_command2])
-    command_model = command_llm.with_structured_output(Command, method="json_mode")
+    command_tools = [set_bot_name, set_user_name, set_answer_type]
+    command_model = command_llm.bind_tools(command_tools)
