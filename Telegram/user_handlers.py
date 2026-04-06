@@ -16,7 +16,13 @@ from utils import search_web, trim_history, unpack_history, logger, current_answ
 from Telegram.state import UserState
 from Chains import *
 import settings_manager as s
+from Chains.command_chain import set_bot_name, set_user_name, set_answer_type
 
+available_tools = {
+    "set_user_name": set_user_name,
+    "set_bot_name": set_bot_name,
+    "set_answer_type": set_answer_type,
+}
 
 user = Router()
 
@@ -57,7 +63,7 @@ async def is_valid_question_length(question, message,
         return False
     if len(question.strip())>=max_question_length:
         await answer_to_user(message, "Вибачте, я не можу відповісти на таке велике питання. "
-                                      "Будь ласка, сформулюйте питання більшстисло")
+                                      "Будь ласка, сформулюйте питання більш стисло")
         return False
     return True
 
@@ -83,6 +89,7 @@ def _keep_only_cyrillic_start(text: str) -> str:
     # Якщо кирилиці взагалі немає (наприклад, тільки <0, back>)
     raise ValueError("Модель видала порожній рядок")
 
+
 @traceable(run_type="chain", name="HandleProcessor")
 async def handle_processor(router_response: ChainRouter,
                            state: FSMContext,
@@ -102,7 +109,7 @@ async def handle_processor(router_response: ChainRouter,
     is_vision_needed = router_response.is_vision_needed or False
     search_query = router_response.search_query or ""
 
-    # Потібне зображення - дістати його
+    # Потрібне зображення - дістати його
     user_image = state_data.get("wait_image", None)
     if is_vision_needed or user_image:
         # Є? Записати в історію
@@ -169,63 +176,38 @@ async def handle_processor(router_response: ChainRouter,
 
 
 @traceable(run_type="chain", name="HandleCommand")
-async def handle_command(command_response: ChainCommand, state: FSMContext, message: Message):
+async def handle_command(ai_msg: AIMessage, state: FSMContext, message: Message):
     state_data = await state.get_data()
 
     history = state_data.get("history", [])
 
-    match command_response.command:
-        case "set_user_name":
-            user_name = command_response.command_argument
-            old_name = state_data.get("user_name", "невідомо")
-            history.append(
-                [AIMessage(
-                    content=f"Зміню ім'я користувача з {old_name} на {user_name}",
-                    tool_calls=[{"id": "set_user_name", "name": "set_user_name", "args": {"name": user_name}}]
-                ),
-                    ToolMessage(
-                        content=f"Тепер ім'я користувача - {user_name}",
-                        tool_call_id="set_user_name"
-                    )]
-            )
-            history.append(AIMessage(f"Добре, тепер я буду називати вас {user_name}"))
-            await state.update_data(user_name=user_name)
-            await answer_to_user(message, f"Добре, тепер я буду називати вас {user_name}")
-        case "set_bot_name":
-            bot_name = command_response.command_argument
-            old_bot_name = state_data.get("bot_name", s.get("DEFAULT_BOT_NAME"))
-            history.append(
-                [AIMessage(
-                    content=f"Зміню своє ім'я з {old_bot_name} на {bot_name}",
-                    tool_calls=[{"id": "set_bot_name", "name": "set_bot_name", "args": {"name": bot_name}}]
-                ),
-                    ToolMessage(
-                        content=f"Тепер твоє ім'я - {bot_name}",
-                        tool_call_id="set_bot_name"
-                    )]
-            )
-            history.append(AIMessage(f"Добре, тепер мене звуть {bot_name}"))
-            await state.update_data(bot_name=bot_name)
-            await answer_to_user(message, f"Добре, тепер мене звуть {bot_name}")
-        case "set_answer_type":
-            new_answer_type = command_response.command_argument
-            old_answer_type = state_data.get("answer_type", s.get('ANSWER_TYPE'))
+    logger.debug(f"ai_msg type: {type(ai_msg)}")
+    logger.debug(f"ai_msg.content: {ai_msg.content}")
+    logger.debug(f"ai_msg.tool_calls: {ai_msg.tool_calls}")
+    logger.debug(f"ai_msg raw: {ai_msg}")
 
-            history.append(
-                [AIMessage(
-                    content=f"Зміню тип відповіді з {old_answer_type} на {new_answer_type}",
-                    tool_calls=[{"id": "set_answer_type", "name": "set_answer_type", "args": {"name": new_answer_type}}]
-                ),
-                    ToolMessage(
-                        content=f"Тепер тип відповіді - {new_answer_type}",
-                        tool_call_id="set_answer_type"
-                    )]
-            )
-            history.append(AIMessage(f"Новий тип відповіді - {new_answer_type}"))
-            await state.update_data(answer_type=new_answer_type)
-            current_answer_type.set(new_answer_type)
-            await answer_to_user(message, f"Новий тип відповіді - {new_answer_type}")
+    if ai_msg.tool_calls:
 
+        tool_call_pair: list[AIMessage|ToolMessage] = [ai_msg]
+
+        for tool_call in ai_msg.tool_calls:
+            tool_name = tool_call["name"]
+            tool_args = tool_call["args"]
+            tool_id = tool_call["id"]
+
+            if tool_name in available_tools:
+                tool_obj = available_tools[tool_name]
+                try:
+                    observation = await tool_obj.coroutine(**tool_args, state=state, message=message)
+                    logger.info(f"Результат тула {tool_name}: {observation}")
+                    tool_call_pair.append(ToolMessage(content=observation, tool_call_id=tool_id))
+
+                except Exception as e:
+                    logger.exception(f"Помилка в тулі {tool_name}: {e}")
+            else:
+                logger.warning(f"Команда {tool_name} не знайдена.")
+
+        history.append(tool_call_pair)
     await state.update_data(history=trim_history(history))
     await state.set_state(UserState.wait_input)
 
@@ -354,12 +336,16 @@ async def user_sent_photo(message: Message, state: FSMContext, bot: Bot):
             human_msg_index = next((i for i, msg in reversed(list(enumerate(history)))
                                     if isinstance(msg, HumanMessage)), None)
 
-            # Перевіряємо чи після нього є tool_call пара із виконанням команди
-            commands = ['set_bot_name','set_user_name','set_answer_type']
-            already_processed = any(
-                isinstance(msg, list) and msg[1].tool_call_id in commands
-                for msg in history[human_msg_index + 1:]
-            )
+            # Перевіряємо чи після нього є tool_call із виконанням команди
+            commands = available_tools.keys()
+            already_processed = False
+            for msg_block in history[human_msg_index + 1:]:
+                if isinstance(msg_block, list):
+                    ai_msg = msg_block[0]
+                    if isinstance(ai_msg, AIMessage) and ai_msg.tool_calls:
+                        if any(tc['name'] in commands for tc in ai_msg.tool_calls):
+                            already_processed = True
+                            break
 
             if already_processed:
                 await answer_to_user(message, "Будь ласка, задайте питання до фото")

@@ -71,12 +71,12 @@ def trim_history(history: list, max_message_memory: int = None) -> list:
 
     ai_message = next((m for m in reversed(history) if isinstance(m, AIMessage)), None)
 
-    # Знаходимо останню пару AIMessage з tool_call + ToolMessage для пошуку та зображення. В історю вони записані саме по-черзі
+    # Знаходимо останню пару AIMessage з tool_call + ToolMessage для пошуку та зображення. В історію вони записані саме по-черзі
     vision_pair = []
     search_pair = []
     for i, msg in enumerate(history):
         if isinstance(msg, list):
-            ai_msg, tool_msg = msg
+            ai_msg, *tool_msgs = msg
             if any(tc["name"] == "search" for tc in ai_msg.tool_calls):
                 search_pair = msg
             elif any(tc["name"] == "vision" for tc in ai_msg.tool_calls):
