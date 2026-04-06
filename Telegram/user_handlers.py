@@ -230,34 +230,6 @@ async def handle_command(command_response: ChainCommand, state: FSMContext, mess
     await state.set_state(UserState.wait_input)
 
 
-def _mask_tools(history):
-    _history = history.copy()
-    for i, msg in enumerate(_history):
-        if isinstance(msg, list):
-            ai_msg, tool_msg = msg
-            match tool_msg.tool_call_id:
-                case 'vision_result':
-                    _history[i] = [ai_msg,
-                                   ToolMessage(content="Команду виконано. Отримано фото. Чекаю на наступне питання.", tool_call_id="vision_result")]
-                case 'search_result':
-                    pass
-                case 'set_user_name':
-                    _history[i] = [ai_msg,
-                                   ToolMessage(content="Команду виконано. Змінено ім'я користувача. Чекаю на наступне питання.", tool_call_id="set_user_name")]
-                case 'set_bot_name':
-                    _history[i] = [ai_msg,
-                                   ToolMessage(content="Команду виконано. Змінено твоє ім'я. Чекаю на наступне питання.", tool_call_id="set_bot_name")]
-                case 'set_answer_type':
-                    _history[i] = [ai_msg,
-                                   ToolMessage(content=f"Команду виконано. Тип відповіді змінено. Чекаю на наступне питання.", tool_call_id="set_answer_type")]
-                case _:
-                    tool_call_id = ai_msg.tool_calls[0].get('id', "unknown")
-                    _history[i] = [ai_msg,
-                                   ToolMessage(content="НЕВІДОМИЙ ІНСТРУМЕНТ. ІГНОРУЙ ЦЕЙ ВИКЛИК",
-                                               tool_call_id=tool_call_id)]
-    return _history
-
-
 @traceable(run_type="chain", name="HandleRouter")
 async def handle_router(question: str, state: FSMContext, message: Message):
     """Обробка результату роутера: ставить відповідний стан"""
@@ -265,74 +237,62 @@ async def handle_router(question: str, state: FSMContext, message: Message):
     history = state_data.get("history", [])
     history.append(HumanMessage(question))
 
-    # щоб не плутати модель маскуємо реальні виклики на просто підтвердження того що виклик був
-    # плюс Router і Command моделі не обов'язково взагалі підтримують зображення
-    _history = _mask_tools(history)
-    messages = unpack_history(_history)
+    try:
+        router_response = await run_router(question)
 
-    MAX_RETRIES = 2
+        await state.update_data(history=history)
 
-    for attempt in range(MAX_RETRIES):
-        try:
-            router_response = await run_router(messages)
+        match router_response.task:
+            case "command":
+                command_response = await run_command(question)
+                await handle_command(command_response, state, message)
+            case "answer":
+                await handle_processor(router_response, state, message)
 
-            await state.update_data(history=history)
+    except OutputParserException as e:
 
-            match router_response.task:
-                case "command":
-                    command_response = await run_command(question)
-                    await handle_command(command_response, state, message)
-                case "answer":
-                    await handle_processor(router_response, state, message)
+        error_message = "Вибачте, здається, виникла помилка на стороні серверу. Будь ласка, спробуйте ще раз"
+        last_human_message = None
+        for i, msg in reversed(list(enumerate(history))):
+            if isinstance(msg, HumanMessage):
+                last_human_message = i
+                break
 
-            break
-        except OutputParserException as e:
-            if attempt < MAX_RETRIES - 1:
-                logger.warning(f"Router retry {attempt + 1}/{MAX_RETRIES}: {e}")
-                continue
+        # відкочуємо історію до попереднього людського повідомлення.
+        if last_human_message:
+            history = history[:last_human_message]
+        # якщо попереднє людське повідомлення - перше в історії, або його взагалі нема - історія стирається
+        else:
+            history = []
 
-            error_message = "Вибачте, здається, виникла помилка на стороні серверу. Будь ласка, спробуйте ще раз"
-            last_human_message = None
+        await answer_to_user(message, error_message)
+        await state.update_data(history=history)
+        await state.set_state(UserState.wait_input)
+
+        raise
+    except Exception as e:
+        error_message = ("Вибачте, я не можу обробити зображення. "
+                         "Можливо, воно містить матеріали делікатного характеру")
+        if "500" in str(e) or "Internal Server Error" in str(e):
+            bad_image_index = None
             for i, msg in reversed(list(enumerate(history))):
-                if isinstance(msg, HumanMessage):
-                    last_human_message = i
-                    break
+                match msg:
+                    case [_, ToolMessage(tool_call_id="vision_result")]:
+                        bad_image_index = i
+                        break
 
-            # відкочуємо історію до поперереднього людського повідомлення.
-            if last_human_message:
-                history = history[:last_human_message]
-            # якщо попереднє людське повідомлення - перше в історії, або його взагалі нема - історія стирається
+            if bad_image_index is not None:
+                history[bad_image_index][1] = ToolMessage(content=error_message,
+                                                          tool_call_id="vision_result")
+
+                await answer_to_user(message, error_message)
+                await state.update_data(history=history)
+                await state.set_state(UserState.wait_input)
             else:
-                history = []
-
-            await answer_to_user(message, error_message)
-            await state.update_data(history=history)
-            await state.set_state(UserState.wait_input)
-
+                logger.error("handle_router | vision_result not found in history")
+                await state.set_state(UserState.wait_input)
+        else:
             raise
-        except Exception as e:
-            error_message = ("Вибачте, я не можу обробити зображення. "
-                             "Можливо, воно містить матеріали делікатного характеру")
-            if "500" in str(e) or "Internal Server Error" in str(e):
-                bad_image_index = None
-                for i, msg in reversed(list(enumerate(history))):
-                    match msg:
-                        case [_, ToolMessage(tool_call_id="vision_result")]:
-                            bad_image_index = i
-                            break
-
-                if bad_image_index is not None:
-                    history[bad_image_index][1] = ToolMessage(content=error_message,
-                                                              tool_call_id="vision_result")
-
-                    await answer_to_user(message, error_message)
-                    await state.update_data(history=history)
-                    await state.set_state(UserState.wait_input)
-                else:
-                    logger.error("handle_router | vision_result not found in history")
-                    await state.set_state(UserState.wait_input)
-            else:
-                raise
 
 
 @user.message(CommandStart())
