@@ -2,6 +2,7 @@ import base64
 import os
 import asyncio
 import re
+from datetime import datetime
 
 from aiogram import Router, F, Bot
 from aiogram.types import Message, ErrorEvent
@@ -11,8 +12,9 @@ from langchain_core.exceptions import OutputParserException
 from langchain_core.messages import ToolMessage, AIMessage, HumanMessage
 from langsmith import traceable
 
+from Chains.processor_chain import search
 from Chains.text_to_voice import answer_to_user
-from utils import search_web, trim_history, unpack_history, logger, current_answer_type
+from utils import trim_history, unpack_history, logger
 from Telegram.state import UserState
 from Chains import *
 import settings_manager as s
@@ -107,17 +109,17 @@ async def handle_processor(router_response: ChainRouter,
     user_name = state_data.get("user_name",f"{message.from_user.first_name}")
     bot_name = state_data.get("bot_name",s.get("DEFAULT_BOT_NAME"))
     is_vision_needed = router_response.is_vision_needed or False
-    search_query = router_response.search_query or ""
 
     # Потрібне зображення - дістати його
     user_image = state_data.get("wait_image", None)
     if is_vision_needed or user_image:
         # Є? Записати в історію
         if user_image:
+            unique_vision_id = f"vsn_{int(datetime.now().timestamp())}"
             history.append(
                 [AIMessage(
                     content=f"Маю отримати зображення, яке стосується запитання від користувача.",
-                    tool_calls=[{"id": "vision_result", "name": "vision", "args": {}}]
+                    tool_calls=[{"id": unique_vision_id, "name": "vision", "args": {}}]
                 ),
                 ToolMessage(
                     content=[
@@ -128,7 +130,7 @@ async def handle_processor(router_response: ChainRouter,
                             "mime_type": "image/jpeg",
                         },
                     ],
-                    tool_call_id="vision_result",
+                    tool_call_id=unique_vision_id,
                 )]
             )
             await state.update_data(history=trim_history(history), wait_image=None)
@@ -141,38 +143,38 @@ async def handle_processor(router_response: ChainRouter,
             await state.update_data(history=trim_history(history), pending_router_response=router_response)
             return
 
-    # Є пошуковий запит - виконати пошук - додати в історію
-    if search_query:
-        search_result = await search_web(search_query, 5)
-        history.append(
-            [AIMessage(
-                content=f"Пошукаю інформацію в інтернеті за запитом: {search_query}",
-                tool_calls=[{"id": "search_result", "name": "search", "args": {"search_query": search_query}}]
-            ),
-                ToolMessage(
-                    content=search_result,
-                    tool_call_id="search_result"
-                )]
-        )
+    max_iterations = 3  # Максимальна кількість кроків "думок" бота
+    current_step = 0
 
-    logger.debug(f"History types: {[type(m).__name__ for m in history]}")
+    while current_step < max_iterations:
+        current_step += 1
 
-    messages = unpack_history(history)
+        messages = unpack_history(history)
 
-    processor_response = await run_processor(bot_name, user_name, messages)
-    processor_response = _keep_only_cyrillic_start(processor_response)
-    logger.debug(f"processor_response type: {type(processor_response)}, value: {repr(processor_response)}")
+        response = await run_processor(bot_name, user_name, messages)
 
-    history.append(AIMessage(processor_response))
+        if response.query:
+            search_results = await search.ainvoke({"query": response.query, "max_results": 5})
 
-    await state.set_state(UserState.wait_input)
-    logger.debug("Стан змінено на wait_input")
+            call_id = f"call_{int(datetime.now().timestamp())}_{current_step}"
+            history.append(AIMessage(
+                content=f"Шукаю інформацію: {response.query}",
+                tool_calls=[{"name": "search", "args": {"query": response.query}, "id": call_id}]
+            ))
+            history.append(ToolMessage(content=search_results, tool_call_id=call_id))
 
-    await answer_to_user(message, processor_response)
-    logger.debug("answer_to_user виконано")
+            continue
 
-    await state.update_data(history=trim_history(history))
-    logger.debug("Історію збережено")
+        elif response.answer:
+            final_text = _keep_only_cyrillic_start(response.answer)
+            history.append(AIMessage(content=final_text))
+
+            await answer_to_user(message, final_text)
+            await state.update_data(history=trim_history(history))
+            return
+
+    # Якщо цикл завершився, а відповіді немає (перевищено ліміт)
+    await answer_to_user(message, "На жаль, запит виявився занадто складним. Спробуйте уточнити питання.")
 
 
 @traceable(run_type="chain", name="HandleCommand")
@@ -259,13 +261,17 @@ async def handle_router(question: str, state: FSMContext, message: Message):
             bad_image_index = None
             for i, msg in reversed(list(enumerate(history))):
                 match msg:
-                    case [_, ToolMessage(tool_call_id="vision_result")]:
-                        bad_image_index = i
-                        break
+                    case [AIMessage() as ai_msg, *other_tools]:
+                        if any(tc.get('name') == 'vision' for tc in ai_msg.tool_calls):
+                            bad_image_index = i
+                            break
 
             if bad_image_index is not None:
-                history[bad_image_index][1] = ToolMessage(content=error_message,
-                                                          tool_call_id="vision_result")
+                vision_id = history[bad_image_index][0].tool_calls[0].get('id')
+                history[bad_image_index][1] = ToolMessage(
+                    content=error_message,
+                    tool_call_id=vision_id
+                )
 
                 await answer_to_user(message, error_message)
                 await state.update_data(history=history)

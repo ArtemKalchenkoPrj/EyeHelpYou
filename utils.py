@@ -12,45 +12,7 @@ import settings_manager as s
 logger = logging.getLogger("Chains")
 
 
-current_answer_type: ContextVar[str] = ContextVar('answer_type', default=None)
-
-@traceable(run_type="retriever")
-async def search_web(query: str, max_results: int=5) -> str:
-    """
-    Функція для пошуку інформації в мережі.
-    :param query: Пошуковий запит
-    :param max_results: Максимальна кількість запитів
-    :return: Результати запитів: Заголовок статті, текст статті, посилання на статтю
-    """
-
-    logger.debug("search_web")
-    logger.debug(f"Шукаю в інтернеті інформацію за запитом {query}")
-    def _search():
-        with DDGS() as ddgs:
-            res = list(ddgs.text(
-                query,
-                max_results=max_results*2, # після фільтрації залишаться не всі посилання
-                region="ua-uk",
-                safesearch="moderate"
-            ))
-        return res
-
-    results = await asyncio.to_thread(_search)
-
-    filtered = [r for r in results if not urlparse(r['href']).netloc.endswith('.ru')]
-    filtered = [r for r in filtered if 'ы' not in r['body'].lower() and 'ы' not in r['title'].lower()]
-    filtered = [r for r in filtered if 'ё' not in r['body'].lower() and 'ё' not in r['title'].lower()]
-    filtered = filtered[:max_results]
-
-    full_text = ""
-    for r in filtered:
-        full_text += f"Заголовок: {r['title']}\n"
-        full_text += f"Текст: {r['body']}\n"
-        full_text += f"Посилання: {r['href']}\n\n"
-
-
-    logger.debug(f"Ось що я знайшов: {full_text}")
-    return full_text
+current_answer_type: ContextVar[str|None] = ContextVar('answer_type', default=None)
 
 
 def trim_history(history: list, max_message_memory: int = None) -> list:

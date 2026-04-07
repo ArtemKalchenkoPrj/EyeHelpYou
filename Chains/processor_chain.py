@@ -1,11 +1,56 @@
+import asyncio
 from datetime import datetime
 import logging
+from urllib.parse import urlparse
 
+from ddgs import DDGS
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
+from langchain_core.tools import tool
 from langsmith import traceable
+from pydantic import BaseModel, Field
 
 from Chains import models
 import settings_manager as s
+
+
+
+@tool
+async def search(query:str, max_results:int):
+    """Функція для пошуку інформації в мережі.
+    Викликай її тільки коли запит користувача потребує цього.
+    Якщо запит стосується чогось простого, що не потребує уточнення - не викликай.
+    Викликай цю функцію якщо запит користувача є актуальним відносно часу. Наприклад:
+    Користувач: хто зараз президент України? пошуковий запит: президент України *поточна дата*
+    """
+
+    logger.debug("search_web")
+    logger.debug(f"Шукаю в інтернеті інформацію за запитом {query}")
+
+    def _search():
+        with DDGS() as ddgs:
+            res = list(ddgs.text(
+                query,
+                max_results=max_results * 2,  # після фільтрації залишаться не всі посилання
+                region="ua-uk",
+                safesearch="moderate"
+            ))
+        return res
+
+    results = await asyncio.to_thread(_search)
+
+    filtered = [r for r in results if not urlparse(r['href']).netloc.endswith('.ru')]
+    filtered = [r for r in filtered if 'ы' not in r['body'].lower() and 'ы' not in r['title'].lower()]
+    filtered = [r for r in filtered if 'ё' not in r['body'].lower() and 'ё' not in r['title'].lower()]
+    filtered = filtered[:max_results]
+
+    full_text = ""
+    for r in filtered:
+        full_text += f"Заголовок: {r['title']}\n"
+        full_text += f"Текст: {r['body']}\n"
+        full_text += f"Посилання: {r['href']}\n\n"
+
+    logger.debug(f"Ось що я знайшов: {full_text}")
+    return full_text
 
 
 logger = logging.getLogger("Chains")
@@ -48,9 +93,6 @@ async def run_processor(bot_name: str,
 
     logger.debug("Я починаю думати")
     response = await models.vision_model.ainvoke(messages)
-    logger.debug("Я закінчую думати")
+    logger.debug(f"Отримано структуру: {type(response)}")
 
-    content = response.content
-    if isinstance(content, list):
-        content = " ".join(block.get("text", "") for block in content if block.get("type") == "text")
-    return content
+    return response
