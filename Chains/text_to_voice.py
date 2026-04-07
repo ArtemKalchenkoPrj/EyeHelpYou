@@ -68,7 +68,7 @@ async def answer_to_user(message: Message, text: str, answer_type: Literal['voic
             filtered_text = _filter_special_chars(clean_text)
             audio = await text_to_voice(filtered_text)
 
-            await message.reply_voice(
+            replied_message = await message.reply_voice(
                 voice=BufferedInputFile(file=audio.getvalue(), filename="voice.ogg")
             )
             if links:
