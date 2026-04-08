@@ -310,16 +310,15 @@ async def handle_router(question: str, state: FSMContext, message: Message):
 @user.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
     user_data = await state.get_data()
+
+    user_name = user_data.get("user_name",message.from_user.first_name)
+    bot_name = user_data.get("bot_name",s.get("DEFAULT_BOT_NAME"))
     answer_type = user_data.get("answer_type", s.get("ANSWER_TYPE"))
+    await state.update_data(bot_name=bot_name, user_name=user_name, answer_type=answer_type)
+
     await state.clear()
 
-    await state.update_data(answer_type=answer_type)
-
-    user_name = message.from_user.first_name
-    default_bot_name = s.get("DEFAULT_BOT_NAME")
-    await state.update_data(bot_name=default_bot_name, user_name=user_name)
-
-    hello_message = (f"Вітаю {user_name} мене звуть {default_bot_name}. "
+    hello_message = (f"Вітаю {user_name} мене звуть {bot_name}. "
                      f"Я - ШІ-помічник для людей із вадами зору. "
                      f"Я можу подивитись на зображення і відповісти на ваше запитання щодо нього. "
                      f"Я також можу знайти якусь інформацію в інтернеті. "
