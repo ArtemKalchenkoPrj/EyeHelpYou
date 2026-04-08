@@ -1,4 +1,4 @@
-import os
+import asyncio
 
 from aiogram import BaseMiddleware
 from aiogram.fsm.context import FSMContext
@@ -7,6 +7,30 @@ from aiogram.types import BufferedInputFile, Message
 from Chains import text_to_voice
 import settings_manager as s
 from utils import current_answer_type
+
+
+class AlbumMiddleware(BaseMiddleware):
+    def __init__(self, latency: float = 0.5):
+        self.latency = latency
+        self.cache: dict[str, list[Message]] = {}
+
+    async def __call__(self, handler, event: Message, data: dict):
+        if not event.media_group_id:
+            return await handler(event, data)
+
+        # Якщо це повідомлення з медіагрупи
+        mid = event.media_group_id
+        if mid not in self.cache:
+            self.cache[mid] = [event]
+            await asyncio.sleep(self.latency)
+
+            # Після очікування дістаємо всі зібрані повідомлення
+            data["album"] = self.cache.pop(mid)
+            return await handler(event, data)
+        else:
+            # Наступні повідомлення групи просто додаємо в список і не пускаємо далі
+            self.cache[mid].append(event)
+            return
 
 
 class ThrottlingMiddleware(BaseMiddleware):

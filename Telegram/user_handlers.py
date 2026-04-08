@@ -116,23 +116,47 @@ async def handle_processor(router_response: ChainRouter,
         # Є? Записати в історію
         if user_image:
             unique_vision_id = f"vsn_{int(datetime.now().timestamp())}"
-            history.append(
-                [AIMessage(
-                    content=f"Маю отримати зображення, яке стосується запитання від користувача.",
-                    tool_calls=[{"id": unique_vision_id, "name": "vision", "args": {}}]
-                ),
-                ToolMessage(
-                    content=[
-                        {
-                            "type": "image",
-                            "source_type": "base64",
-                            "data": user_image,
-                            "mime_type": "image/jpeg",
-                        },
-                    ],
-                    tool_call_id=unique_vision_id,
-                )]
-            )
+
+            # у випадку коли користувач надіслав декілька фото одним повідомленням
+            if isinstance(user_image, list):
+                image_content = []
+                # для кожного повідомлення створюється результат
+                for img in user_image:
+                    image_content.append({
+                        "type": "image",
+                        "source_type": "base64",
+                        "data": img,
+                        "mime_type": "image/jpeg",
+                    })
+
+                history.append([
+                    AIMessage(
+                        content=f"Маю отримати зображення, яке стосується запитання від користувача.",
+                        tool_calls=[{"id": unique_vision_id, "name": "vision", "args": {}}]
+                    ),
+                    ToolMessage(
+                        content=image_content,
+                        tool_call_id=unique_vision_id,
+                    )
+                ])
+            else:
+                history.append(
+                    [AIMessage(
+                        content=f"Маю отримати зображення, яке стосується запитання від користувача.",
+                        tool_calls=[{"id": unique_vision_id, "name": "vision", "args": {}}]
+                    ),
+                    ToolMessage(
+                        content=[
+                            {
+                                "type": "image",
+                                "source_type": "base64",
+                                "data": user_image,
+                                "mime_type": "image/jpeg",
+                            },
+                        ],
+                        tool_call_id=unique_vision_id,
+                    )
+                ])
             await state.update_data(history=trim_history(history), wait_image=None)
 
         # Нема? Зупинити процес. Попросити надати зображення
@@ -323,13 +347,22 @@ async def user_sent_text(message: Message, state: FSMContext):
 
 # Користувач відправив фото
 @user.message(UserState.wait_input, F.photo)
-async def user_sent_photo(message: Message, state: FSMContext, bot: Bot):
-    image = await _get_image_from_message(message, bot)
+async def user_sent_photo(message: Message, state: FSMContext, bot: Bot, album:list[Message] = None):
 
     state_data = await state.get_data()
     history = state_data.get('history', [])
     human_msg = next((msg for msg in reversed(history) if isinstance(msg, HumanMessage)), None)
     question = message.caption
+
+    if not album:
+        image = await _get_image_from_message(message, bot)
+    else :
+        image = []
+        for i, msg in enumerate(album):
+            img = await _get_image_from_message(msg, bot)
+            image.append(img)
+            if not question and msg.caption:
+                question = msg.caption
 
     if not question:
         if not human_msg:
@@ -390,8 +423,15 @@ async def wait_input_default_handler(message: Message):
 
 # Роутер вирішив, що потрібне фото, а фото немає
 @user.message(UserState.wait_image, F.photo)
-async def cmd_wait_image(message: Message, state: FSMContext, bot: Bot):
-    image = await _get_image_from_message(message, bot)
+async def cmd_wait_image(message: Message, state: FSMContext, bot: Bot, album:list[Message] = None):
+    if not album:
+        image = await _get_image_from_message(message, bot)
+    else :
+        image = []
+        for msg in album:
+            img = await _get_image_from_message(msg, bot)
+            image.append(img)
+
 
     state_data = await state.get_data()
     router_response = state_data["pending_router_response"]

@@ -5,7 +5,7 @@ from aiogram import Bot, Dispatcher
 
 from Chains.models import load_models
 from Telegram.user_handlers import user
-from Telegram.middleware import ThrottlingMiddleware, AnswerTypeMiddleware
+from Telegram.middleware import ThrottlingMiddleware, AnswerTypeMiddleware, AlbumMiddleware
 import settings_manager as s
 from Telegram.admin_handlers import admin
 
@@ -24,6 +24,7 @@ async def main():
     dp = Dispatcher()
     dp.include_router(admin)
     dp.include_router(user)
+    dp.message.middleware(AlbumMiddleware())
     dp.message.middleware(ThrottlingMiddleware())
     dp.message.middleware(AnswerTypeMiddleware())
 
