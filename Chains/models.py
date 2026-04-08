@@ -97,7 +97,7 @@ def load_models():
     fallback_vision1_chain = fallback_vision1 | RunnableLambda(_validate_output)
     fallback_vision2_chain = fallback_vision2 | RunnableLambda(_validate_output)
 
-    vision_model = primary_chain.with_fallbacks([primary_vision, fallback_vision1_chain, fallback_vision2_chain])
+    vision_model = primary_chain.with_fallbacks([fallback_vision1_chain, fallback_vision2_chain])
 
 
     primary_router = _make_openrouter_router_llm("MODEL_NAME")
