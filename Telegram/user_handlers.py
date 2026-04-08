@@ -309,9 +309,12 @@ async def handle_router(question: str, state: FSMContext, message: Message):
 
 @user.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
+    user_data = await state.get_data()
+    answer_type = user_data.get("answer_type", s.get("ANSWER_TYPE"))
     await state.clear()
 
-    await state.update_data(answer_type=s.get('ANSWER_TYPE'))
+    await state.update_data(answer_type=answer_type)
+
     user_name = message.from_user.first_name
     default_bot_name = s.get("DEFAULT_BOT_NAME")
     await state.update_data(bot_name=default_bot_name, user_name=user_name)
