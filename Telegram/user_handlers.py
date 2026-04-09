@@ -1,24 +1,26 @@
+import asyncio
 import base64
 import os
-import asyncio
 import re
 from datetime import datetime
 
+import cv2
+import numpy as np
 from aiogram import Router, F, Bot
-from aiogram.types import Message, ErrorEvent
 from aiogram.filters.command import CommandStart
 from aiogram.fsm.context import FSMContext
+from aiogram.types import Message, ErrorEvent
 from langchain_core.exceptions import OutputParserException
 from langchain_core.messages import ToolMessage, AIMessage, HumanMessage
 from langsmith import traceable
 
+import settings_manager as s
+from Chains import *
+from Chains.command_chain import set_bot_name, set_user_name, set_answer_type
 from Chains.processor_chain import search
 from Chains.text_to_voice import answer_to_user
-from utils import trim_history, unpack_history, logger
 from Telegram.state import UserState
-from Chains import *
-import settings_manager as s
-from Chains.command_chain import set_bot_name, set_user_name, set_answer_type
+from utils import trim_history, unpack_history, logger
 
 available_tools = {
     "set_user_name": set_user_name,
@@ -69,14 +71,49 @@ async def is_valid_question_length(question, message,
         return False
     return True
 
+
+
+def _enhance_image(image_bytes: bytes) -> bytes:
+    """
+    Автоматичне покращення зображення перед відправкою в Vision-модель.
+    Вирівнює світло та додає чіткості деталям.
+    """
+    nparr = np.frombuffer(image_bytes, np.uint8)
+    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+    if img is None:
+        return image_bytes
+
+    # Переводимо в LAB простір, щоб працювати тільки з яскравістю (L), не чіпаючи кольори
+    lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+    l, a, b = cv2.split(lab)
+
+    # Створюємо CLAHE об'єкт (clipLimit - сила контрасту, tileGridSize - розмір сітки)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    l = clahe.apply(l)
+
+    # Збираємо назад
+    enhanced_img = cv2.merge((l, a, b))
+    enhanced_img = cv2.cvtColor(enhanced_img, cv2.COLOR_LAB2BGR)
+
+    # Підвищення різкості
+    gaussian_blur = cv2.GaussianBlur(enhanced_img, (0, 0), 3)
+    enhanced_img = cv2.addWeighted(enhanced_img, 1.5, gaussian_blur, -0.5, 0)
+
+    success, encoded_img = cv2.imencode('.jpg', enhanced_img, [cv2.IMWRITE_JPEG_QUALITY, 95])
+
+    return encoded_img.tobytes() if success else image_bytes
+
+
 async def _get_image_from_message(message, bot):
     """Функція для отримання картинки з повідомлення і конвертація її у формат, який LLM може прочитати"""
     photo = message.photo[-1].file_id
     buffer = await bot.download(photo)
     buffer.seek(0)
     image_bytes = buffer.read()
-    image_base64 = base64.b64encode(image_bytes).decode("utf-8")
-    return image_base64
+    enhanced_bytes = _enhance_image(image_bytes)
+    enhanced_image = base64.b64encode(enhanced_bytes).decode("utf-8")
+    return enhanced_image
 
 
 def _keep_only_cyrillic_start(text: str) -> str:
