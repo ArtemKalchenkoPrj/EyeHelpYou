@@ -17,7 +17,7 @@ from langsmith import traceable
 import settings_manager as s
 from Chains import *
 from Chains.command_chain import set_bot_name, set_user_name, set_answer_type
-from Chains.processor_chain import search
+from Chains.processor_chain import search, run_calculator
 from Chains.text_to_voice import answer_to_user
 from Telegram.state import UserState
 from utils import trim_history, unpack_history, logger
@@ -217,12 +217,26 @@ async def handle_processor(router_response: ChainRouter,
         if response.query:
             search_results = await search.ainvoke({"query": response.query, "max_results": 5})
 
-            call_id = f"call_{int(datetime.now().timestamp())}_{current_step}"
+            call_id = f"srch_{int(datetime.now().timestamp())}_{current_step}"
             history.append(AIMessage(
                 content=f"Шукаю інформацію: {response.query}",
                 tool_calls=[{"name": "search", "args": {"query": response.query}, "id": call_id}]
             ))
             history.append(ToolMessage(content=search_results, tool_call_id=call_id))
+
+            continue
+
+        elif calculator_input := response.calculator_input:
+            axioms = calculator_input.axioms
+            question = calculator_input.question
+            calculator_result = await run_calculator.ainvoke({"axioms": axioms, "question": question})
+
+            call_id = f"calc_{int(datetime.now().timestamp())}_{current_step}"
+            history.append(AIMessage(
+                content=f"Треба провести розрахунки: Context:{axioms}\nUser Question:{question}",
+                tool_calls=[{"name": "run_calculator", "args": {"axioms": axioms, "question": question}, "id": call_id}]
+            ))
+            history.append(ToolMessage(content=calculator_result, tool_call_id=call_id))
 
             continue
 
@@ -233,6 +247,7 @@ async def handle_processor(router_response: ChainRouter,
             await answer_to_user(message, final_text)
             await state.update_data(history=trim_history(history))
             return
+
 
     # Якщо цикл завершився, а відповіді немає (перевищено ліміт)
     await answer_to_user(message, "На жаль, запит виявився занадто складним. Спробуйте уточнити питання.")
@@ -490,9 +505,9 @@ async def cmd_wait_image_text(message: Message, state: FSMContext):
 
 # Очікувалося фото, а користувач відправив голосове - обробити як голосове
 @user.message(UserState.wait_image, F.voice)
-async def cmd_wait_image_voice(message: Message, state: FSMContext):
+async def cmd_wait_image_voice(message: Message, state: FSMContext, bot: Bot):
     await state.set_state(UserState.wait_input)
-    await user_sent_voice(message, state)
+    await user_sent_voice(message, state, bot)
 
 
 @user.message()

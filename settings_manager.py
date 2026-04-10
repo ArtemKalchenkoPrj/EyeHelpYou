@@ -22,7 +22,11 @@ DEFAULT_SETTINGS = {
 
   "COMMAND_MODEL_NAME": "xiaomi/mimo-v2-flash",
   "COMMAND_FALLBACK1": "z-ai/glm-4.7-flash",
-  "COMMAND_FALLBACK2": "qwen/qwen3-235b-a22b-2507"
+  "COMMAND_FALLBACK2": "qwen/qwen3-235b-a22b-2507",
+
+    "CALCULATOR_MODEL_NAME": "openai/gpt-oss-120b",
+    "CALCULATOR_FALLBACK1": "z-ai/glm-4.7-flash",
+    "CALCULATOR_FALLBACK2": "minimax/minimax-m2.5"
 }
 
 _settings = {}

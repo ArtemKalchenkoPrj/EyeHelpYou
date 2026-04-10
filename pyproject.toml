@@ -17,6 +17,7 @@ dependencies = [
     "pydantic>=2.12.5",
     "pydub>=0.25.1",
     "python-dotenv>=1.2.1",
+    "restrictedpython>=8.1",
 ]
 
 [dependency-groups]
