@@ -16,6 +16,8 @@ router_model = None
 command_model = None
 calculator_model = None
 
+reasoning_needed_models = ['openai/gpt-oss-120b']
+
 def _validate_output(response):
     content = response.answer or response.query or response.calculator_input
 
@@ -26,11 +28,10 @@ def _validate_output(response):
 
 def _make_openrouter_vision_llm(postfix:str, **kwargs):
     """Фабрика для створення ChatOpenAI, налаштованого на OpenRouter. для vision моделей"""
-
     return ChatOpenAI(
-        reasoning={"effort": "none"},
-        max_tokens=s.get("MAX_ANSWER_LENGTH", 250),
         model=s.get("VISION_"+postfix),
+        max_tokens=s.get("MAX_ANSWER_LENGTH", 250),
+        reasoning={"effort": "low"},
         base_url="https://openrouter.ai/api/v1",
         api_key=os.getenv("OPENROUTER_API_KEY"),
         default_headers={
@@ -42,10 +43,14 @@ def _make_openrouter_vision_llm(postfix:str, **kwargs):
 
 def _make_openrouter_command_llm(postfix:str, **kwargs):
     """Фабрика для створення ChatOpenAI, налаштованого на OpenRouter. для command моделей"""
-
+    model_name = s.get("COMMAND_" + postfix)
+    if model_name in reasoning_needed_models:
+        reasoning = {"effort": "low"}
+    else:
+        reasoning = {"effort": "none"}
     return ChatOpenAI(
-        reasoning={"effort": "none"},
-        model=s.get("COMMAND_" + postfix),
+        reasoning=reasoning,
+        model=model_name,
         temperature=0,
         base_url="https://openrouter.ai/api/v1",
         api_key=os.getenv("OPENROUTER_API_KEY"),
@@ -58,10 +63,14 @@ def _make_openrouter_command_llm(postfix:str, **kwargs):
 
 def _make_openrouter_router_llm(postfix:str, **kwargs):
     """Фабрика для створення ChatOpenAI, налаштованого на OpenRouter. для router моделей"""
-
+    model_name = s.get("ROUTER_" + postfix)
+    if model_name in reasoning_needed_models:
+        reasoning = {"effort": "low"}
+    else:
+        reasoning = {"effort": "none"}
     return ChatOpenAI(
-        reasoning={"effort": "none"},
-        model=s.get("ROUTER_" + postfix),
+        reasoning=reasoning,
+        model=model_name,
         temperature=0,
         base_url="https://openrouter.ai/api/v1",
         api_key=os.getenv("OPENROUTER_API_KEY"),
@@ -73,11 +82,15 @@ def _make_openrouter_router_llm(postfix:str, **kwargs):
     )
 
 def _make_openrouter_calculator_llm(postfix:str, **kwargs):
-    """Фабрика для створення ChatOpenAI, налаштованого на OpenRouter. для router моделей"""
-
+    """Фабрика для створення ChatOpenAI, налаштованого на OpenRouter. для calculator моделей"""
+    model_name = s.get("CALCULATOR_" + postfix)
+    if model_name in reasoning_needed_models:
+        reasoning = {"effort": "low"}
+    else:
+        reasoning = {"effort": "none"}
     return ChatOpenAI(
-        reasoning={"effort": "none"},
-        model=s.get("CALCULATOR_" + postfix),
+        reasoning=reasoning,
+        model=model_name,
         temperature=0,
         base_url="https://openrouter.ai/api/v1",
         api_key=os.getenv("OPENROUTER_API_KEY"),
