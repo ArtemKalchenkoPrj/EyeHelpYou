@@ -214,7 +214,17 @@ async def handle_processor(router_response: ChainRouter,
 
         response = await run_processor(bot_name, user_name, messages)
 
-        if response.query:
+
+
+        if response.answer:
+            final_text = _keep_only_cyrillic_start(response.answer)
+            history.append(AIMessage(content=final_text))
+
+            await answer_to_user(message, final_text)
+            await state.update_data(history=trim_history(history))
+            return
+
+        elif response.query:
             search_results = await search.ainvoke({"query": response.query, "max_results": 5})
 
             call_id = f"srch_{int(datetime.now().timestamp())}_{current_step}"
@@ -240,13 +250,7 @@ async def handle_processor(router_response: ChainRouter,
 
             continue
 
-        elif response.answer:
-            final_text = _keep_only_cyrillic_start(response.answer)
-            history.append(AIMessage(content=final_text))
 
-            await answer_to_user(message, final_text)
-            await state.update_data(history=trim_history(history))
-            return
 
 
     # Якщо цикл завершився, а відповіді немає (перевищено ліміт)
