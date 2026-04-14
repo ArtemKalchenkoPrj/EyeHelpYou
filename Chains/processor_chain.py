@@ -2,6 +2,7 @@ import asyncio
 import logging
 import math
 from datetime import datetime, date, timedelta
+from typing import Annotated
 from urllib.parse import urlparse
 
 from RestrictedPython import compile_restricted, safe_globals, safe_builtins
@@ -9,51 +10,76 @@ from ddgs import DDGS
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
 from langchain_core.tools import tool
 from langsmith import traceable
+from pydantic import BaseModel, Field
 
 import settings_manager as s
 from Chains import models
 
+logger = logging.getLogger("Chains")
 
-@tool
-async def search(query:str, max_results:int):
+
+async def fetch_single_query(query: str, max_results: int = 5) -> str:
+    """Виконує один пошуковий запит та фільтрує результати"""
+
+    def _sync_search():
+        with DDGS() as ddgs:
+            return list(ddgs.text(
+                query,
+                max_results=max_results * 2,
+                region="ua-uk",
+                safesearch="moderate"
+            ))
+
+    try:
+        results = await asyncio.to_thread(_sync_search)
+
+        filtered = [r for r in results if not urlparse(r['href']).netloc.endswith('.ru')]
+        filtered = [r for r in filtered if all(c not in r['body'].lower() for c in ['ы', 'ё'])]
+        filtered = filtered[:max_results]
+
+        if not filtered:
+            return f"За запитом '{query}' результатів не знайдено.\n"
+
+        output = f"--- РЕЗУЛЬТАТИ ЗА ЗАПИТОМ: {query} ---\n"
+        for r in filtered:
+            output += f"Заголовок: {r['title']}\nТекст: {r['body']}\nПосилання: {r['href']}\n\n"
+        return output
+
+    except Exception as e:
+        return f"Помилка при пошуку '{query}': {str(e)}\n"
+
+
+MaxLengthStr = Annotated[str, Field(max_length=100)]
+
+
+class SearchToolInput(BaseModel):
+    """Схема для виконання паралельних пошукових запитів"""
+    queries: list[MaxLengthStr] = Field(
+        description="Список від 1 до 3 специфічних пошукових запитів. Розбий складне питання на кілька простих.",
+        min_length=0, max_length=3
+    )
+
+
+@tool("search", args_schema=SearchToolInput)
+async def search(queries: list[str]):
     """Функція для пошуку інформації в мережі.
     Викликай її тільки коли запит користувача потребує цього.
     Якщо запит стосується чогось простого, що не потребує уточнення - не викликай.
     Викликай цю функцію якщо запит користувача є актуальним відносно часу. Наприклад:
     Користувач: хто зараз президент України? пошуковий запит: президент України *поточна дата*
+    Розбивай важкий запит на декілька простіших (до трьох)
     """
+    logger.debug(f"Запуск паралельного пошуку для запитів: {queries}")
 
-    logger.debug("search_web")
-    logger.debug(f"Шукаю в інтернеті інформацію за запитом {query}")
+    # Запускаємо всі запити одночасно (паралельно)
+    tasks = [fetch_single_query(q) for q in queries]
+    results = await asyncio.gather(*tasks)
 
-    def _search():
-        with DDGS() as ddgs:
-            res = list(ddgs.text(
-                query,
-                max_results=max_results * 2,  # після фільтрації залишаться не всі посилання
-                region="ua-uk",
-                safesearch="moderate"
-            ))
-        return res
+    # Збираємо все в один великий звіт
+    final_report = "\n".join(results)
 
-    results = await asyncio.to_thread(_search)
-
-    filtered = [r for r in results if not urlparse(r['href']).netloc.endswith('.ru')]
-    filtered = [r for r in filtered if 'ы' not in r['body'].lower() and 'ы' not in r['title'].lower()]
-    filtered = [r for r in filtered if 'ё' not in r['body'].lower() and 'ё' not in r['title'].lower()]
-    filtered = filtered[:max_results]
-
-    full_text = ""
-    for r in filtered:
-        full_text += f"Заголовок: {r['title']}\n"
-        full_text += f"Текст: {r['body']}\n"
-        full_text += f"Посилання: {r['href']}\n\n"
-
-    logger.debug(f"Ось що я знайшов: {full_text}")
-    return full_text
-
-
-logger = logging.getLogger("Chains")
+    logger.debug("Паралельний пошук завершено.")
+    return final_report
 
 
 def run_code_restricted(code: str) -> str:
@@ -87,10 +113,26 @@ def run_code_restricted(code: str) -> str:
         return f"Runtime Error: {e}"
 
 
-@tool
+class RunCalculatorToolInput(BaseModel):
+    """Schema for input to the calculator"""
+    question: str = Field(description="the math problem that you want to solve")
+    axioms: dict = Field(
+        description="the axioms of current math problem. keys - name of axiom, value - value of axiom",
+        examples=[
+            # Приклад 1: Простий чек/ціни
+            {"свинина_ціна_кг": 250, "вага_грам": 450, "знижка_відсоток": 10},
+
+            # Приклад 2: Лічильники (поточне та попереднє значення)
+            {"current_value": 124.68, "previous_value": 110.20, "tariff_per_m3": 4.32},
+
+            # Приклад 3: Геометрія або будівництво
+            {"wall_height_m": 2.7, "wall_width_m": 4.5, "paint_consumption_per_m2": 0.2}])
+
+
+@tool("calculator", args_schema=RunCalculatorToolInput)
 async def run_calculator(axioms: dict, question: str) -> str:
     """Функція для обчислення математичних операцій. Коли тобі потрібно виконати БУДЬ-ЯКІ обчислення - викликай цю функцію.
-    Важливо: передавай питання повинно бути логічно сформоване та надано англійською мовою"""
+    Важливо: передавай питання повинно бути логічно сформоване та надано англійською мовою."""
     current_date = datetime.now()
     system = f"""Today is {current_date}. You are a high-precision Python Code Generator for a multi-agent mathematical system. 
     Your sole purpose is to transform unstructured data and user queries into executable Python code.
@@ -164,7 +206,6 @@ async def run_calculator(axioms: dict, question: str) -> str:
 async def run_processor(bot_name: str,
                         user_name: str,
                         history: list):
-
     current_date = datetime.now()
     max_answer_length = s.get("MAX_ANSWER_LENGTH")
     system = f"""
@@ -191,6 +232,20 @@ async def run_processor(bot_name: str,
     
     Якщо зображення настільки погане, що ти не можеш навіть визначити категорію об'єкта, запитай користувача: 
     'Здається, камера закрита або дуже розмита, ви намагаєтесь сфотографувати текст чи предмет?
+    
+    Якщо потрібно - розбий задачу максимум на 5 кроків. 
+    Наприклад: 
+    - Користувач: порівняй А і Б
+    - Ти: виконуєш пошук по А, і по Б окремо
+    Отримавши відповідь, відповідаєш користувачеві.
+    Не викликай give_final_answer якщо інформації недостатньо.
+    
+    Розбий запит для пошуку в інтернеті на декілька простіших. 
+    Наприклад:
+    - На скільки років кролики живуть менше за слонів
+    Ти маєш розбити цей запит на:
+    1 - скільки живуть кролики,
+    2 - скільки живуть слони
     
     ТВОЯ ВІДПОВІДЬ НЕ МАЄ ПЕРЕВИЩУВАТИ {max_answer_length} СИМВОЛІВ
     """

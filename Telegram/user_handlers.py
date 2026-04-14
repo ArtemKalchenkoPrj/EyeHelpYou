@@ -22,7 +22,7 @@ from Chains.text_to_voice import answer_to_user
 from Telegram.state import UserState
 from utils import trim_history, unpack_history, logger
 
-available_tools = {
+command_available_tools = {
     "set_user_name": set_user_name,
     "set_bot_name": set_bot_name,
     "set_answer_type": set_answer_type,
@@ -204,54 +204,68 @@ async def handle_processor(router_response: ChainRouter,
             await state.update_data(history=trim_history(history), pending_router_response=router_response)
             return
 
-    max_iterations = 3  # Максимальна кількість кроків "думок" бота
+    max_iterations = 5  # Максимальна кількість кроків "думок" бота
     current_step = 0
+
+    processor_available_tools = {
+        "calculator": run_calculator,
+        "search": search
+    }
+
+    async def _execute_tool(tool_name, tool_obj, **kwargs):
+        @traceable(run_type="tool", name=tool_name)
+        async def __inner():
+            return await tool_obj.coroutine(**kwargs)
+
+        return await __inner()
 
     while current_step < max_iterations:
         current_step += 1
 
         messages = unpack_history(history)
 
-        response = await run_processor(bot_name, user_name, messages)
+        ai_msg = await run_processor(bot_name, user_name, messages)
 
+        if ai_msg.tool_calls:
 
+            tool_call_pair: list[AIMessage | ToolMessage] = [ai_msg]
 
-        if response.answer:
-            final_text = _keep_only_cyrillic_start(response.answer)
-            history.append(AIMessage(content=final_text))
+            for tool_call in ai_msg.tool_calls:
+                tool_name = tool_call["name"]
+                tool_args = tool_call["args"]
+                tool_id = tool_call["id"]
 
-            await answer_to_user(message, final_text)
-            await state.update_data(history=trim_history(history))
-            return
+                if tool_name in processor_available_tools:
+                    tool_obj = processor_available_tools[tool_name]
+                    try:
+                        observation = await _execute_tool(
+                            tool_name,
+                            tool_obj,
+                            **tool_args
+                        )
 
-        elif response.query:
-            search_results = await search.ainvoke({"query": response.query, "max_results": 5})
+                        logger.info(f"Результат тула {tool_name}: {observation}")
+                        tool_call_pair.append(ToolMessage(content=observation, tool_call_id=tool_id))
 
-            call_id = f"srch_{int(datetime.now().timestamp())}_{current_step}"
-            history.append(AIMessage(
-                content=f"Шукаю інформацію: {response.query}",
-                tool_calls=[{"name": "search", "args": {"query": response.query}, "id": call_id}]
-            ))
-            history.append(ToolMessage(content=search_results, tool_call_id=call_id))
+                    except Exception as e:
+                        logger.exception(f"Помилка в тулі {tool_name}: {e}")
+                else:
+                    logger.warning(f"Команда {tool_name} не знайдена.")
 
-            continue
+            history.append(tool_call_pair)
+        else:
+            if answer := ai_msg.content:
+                history.append(AIMessage(content=answer))
+                await state.update_data(history=trim_history(history))
+                await state.set_state(UserState.wait_input)
+                await answer_to_user(message, ai_msg.content)
+                return
+            else:
+                await answer_to_user(message, "Вибачте, щось пішло не так. Спробуйте, будь ласка, ще")
+                return
 
-        elif calculator_input := response.calculator_input:
-            axioms = calculator_input.axioms
-            question = calculator_input.question
-            calculator_result = await run_calculator.ainvoke({"axioms": axioms, "question": question})
-
-            call_id = f"calc_{int(datetime.now().timestamp())}_{current_step}"
-            history.append(AIMessage(
-                content=f"Треба провести розрахунки: Context:{axioms}\nUser Question:{question}",
-                tool_calls=[{"name": "run_calculator", "args": {"axioms": axioms, "question": question}, "id": call_id}]
-            ))
-            history.append(ToolMessage(content=calculator_result, tool_call_id=call_id))
-
-            continue
-
-
-
+        await state.update_data(history=trim_history(history))
+        await state.set_state(UserState.wait_input)
 
     # Якщо цикл завершився, а відповіді немає (перевищено ліміт)
     await answer_to_user(message, "На жаль, запит виявився занадто складним. Спробуйте уточнити питання.")
@@ -277,8 +291,8 @@ async def handle_command(ai_msg: AIMessage, state: FSMContext, message: Message)
             tool_args = tool_call["args"]
             tool_id = tool_call["id"]
 
-            if tool_name in available_tools:
-                tool_obj = available_tools[tool_name]
+            if tool_name in command_available_tools:
+                tool_obj = command_available_tools[tool_name]
                 try:
                     observation = await tool_obj.coroutine(**tool_args, state=state, message=message)
                     logger.info(f"Результат тула {tool_name}: {observation}")
@@ -290,6 +304,8 @@ async def handle_command(ai_msg: AIMessage, state: FSMContext, message: Message)
                 logger.warning(f"Команда {tool_name} не знайдена.")
 
         history.append(tool_call_pair)
+    else:
+        raise ValueError("Модель не викликала жодного інструменту")
     await state.update_data(history=trim_history(history))
     await state.set_state(UserState.wait_input)
 
@@ -436,7 +452,7 @@ async def user_sent_photo(message: Message, state: FSMContext, bot: Bot, album:l
                                     if isinstance(msg, HumanMessage)), None)
 
             # Перевіряємо чи після нього є tool_call із виконанням команди
-            commands = available_tools.keys()
+            commands = command_available_tools.keys()
             already_processed = False
             for msg_block in history[human_msg_index + 1:]:
                 if isinstance(msg_block, list):

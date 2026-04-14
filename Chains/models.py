@@ -2,13 +2,12 @@ import os
 from typing import Literal, Optional
 
 from groq import Groq
+from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableLambda
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
 
 import settings_manager as s
-from Chains.command_chain import set_user_name, set_bot_name, set_answer_type
-from Chains.processor_schemas import ProcessorAnswer
 
 whisper_model = None
 vision_model = None
@@ -18,16 +17,23 @@ calculator_model = None
 
 reasoning_needed_models = ['openai/gpt-oss-120b']
 
-def _validate_output(response):
-    content = response.answer or response.query or response.calculator_input
-
-    if not content or (isinstance(content, str) and content.strip() == ""):
-        raise ValueError("Empty response from model")
-    return response
-
-
 def _make_openrouter_vision_llm(postfix:str, **kwargs):
     """Фабрика для створення ChatOpenAI, налаштованого на OpenRouter. для vision моделей"""
+    from Chains.processor_chain import search, run_calculator
+
+    def _validate_output(ai_msg: AIMessage) -> AIMessage:
+        if isinstance(ai_msg.content, list):
+            # витягуємо текст з блоків
+            text = " ".join(
+                block.get("text", "")
+                for block in ai_msg.content
+                if isinstance(block, dict)
+            )
+            ai_msg.content = text
+        return ai_msg
+
+    vision_tools = [search, run_calculator]
+
     return ChatOpenAI(
         model=s.get("VISION_"+postfix),
         max_tokens=s.get("MAX_ANSWER_LENGTH", 250),
@@ -39,10 +45,11 @@ def _make_openrouter_vision_llm(postfix:str, **kwargs):
             "X-Title": "EyeHelpYou_tg_bot",
         },
         **kwargs
-    ).with_structured_output(ProcessorAnswer)
+    ).bind_tools(vision_tools) | RunnableLambda(_validate_output)
 
 def _make_openrouter_command_llm(postfix:str, **kwargs):
     """Фабрика для створення ChatOpenAI, налаштованого на OpenRouter. для command моделей"""
+
     model_name = s.get("COMMAND_" + postfix)
     if model_name in reasoning_needed_models:
         reasoning = {"effort": "low"}
@@ -111,6 +118,7 @@ class Router(BaseModel):
     is_vision_needed: Optional[bool] = None
 
 def load_models():
+    from Chains.command_chain import set_user_name, set_bot_name, set_answer_type
 
     global whisper_model
     global vision_model
@@ -124,10 +132,7 @@ def load_models():
     primary_vision = _make_openrouter_vision_llm("MODEL_NAME")
     fallback_vision1 = _make_openrouter_vision_llm("FALLBACK1")
     fallback_vision2 = _make_openrouter_vision_llm("FALLBACK2")
-    primary_chain = primary_vision | RunnableLambda(_validate_output)
-    fallback_vision1_chain = fallback_vision1 | RunnableLambda(_validate_output)
-    fallback_vision2_chain = fallback_vision2 | RunnableLambda(_validate_output)
-    vision_model = primary_chain.with_fallbacks([fallback_vision1_chain, fallback_vision2_chain])
+    vision_model = primary_vision.with_fallbacks([fallback_vision1, fallback_vision2])
 
     # router model init
     primary_router = _make_openrouter_router_llm("MODEL_NAME")
