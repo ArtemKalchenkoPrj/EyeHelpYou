@@ -10,8 +10,7 @@
   "VISION_MODEL_NAME": "google/gemini-3-flash-preview",
   "VISION_FALLBACK1": "qwen/qwen3.5-397b-a17b",
   "VISION_FALLBACK2": "xiaomi/mimo-v2-omni",
-
-  "ROUTER_MODEL_NAME": "xiaomi/mimo-v2-flash",
+  "ROUTER_MODEL_NAME": "openai/gpt-oss-120b",
   "ROUTER_FALLBACK1": "z-ai/glm-4.7-flash",
   "ROUTER_FALLBACK2": "qwen/qwen3-235b-a22b-2507",
 

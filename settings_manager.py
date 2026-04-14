@@ -4,25 +4,25 @@ import os
 SETTINGS_PATH = "data/settings.json"
 
 DEFAULT_SETTINGS = {
-  "ANSWER_TYPE": "text",
-  "MAX_ANSWER_LENGTH": 250,
-  "MAX_MESSAGE_MEMORY": 20,
-  "DEFAULT_BOT_NAME": "Остап",
-  "DEFAULT_TTS_VOICE": "uk-UA-OstapNeural",
-  "MIN_QUESTION_LENGTH": 5,
-  "MAX_QUESTION_LENGTH": 250,
+    "ANSWER_TYPE": "text",
+    "MAX_ANSWER_LENGTH": 250,
+    "MAX_MESSAGE_MEMORY": 20,
+    "DEFAULT_BOT_NAME": "Остап",
+    "DEFAULT_TTS_VOICE": "uk-UA-OstapNeural",
+    "MIN_QUESTION_LENGTH": 5,
+    "MAX_QUESTION_LENGTH": 250,
 
-  "VISION_MODEL_NAME": "google/gemini-3-flash-preview",
-  "VISION_FALLBACK1": "qwen/qwen3.5-397b-a17b",
-  "VISION_FALLBACK2": "xiaomi/mimo-v2-omni",
+    "VISION_MODEL_NAME": "google/gemini-3-flash-preview",
+    "VISION_FALLBACK1": "qwen/qwen3.5-397b-a17b",
+    "VISION_FALLBACK2": "xiaomi/mimo-v2-omni",
 
-  "ROUTER_MODEL_NAME": "xiaomi/mimo-v2-flash",
-  "ROUTER_FALLBACK1": "z-ai/glm-4.7-flash",
-  "ROUTER_FALLBACK2": "qwen/qwen3-235b-a22b-2507",
+    "ROUTER_MODEL_NAME": "openai/gpt-oss-120b",
+    "ROUTER_FALLBACK1": "z-ai/glm-4.7-flash",
+    "ROUTER_FALLBACK2": "qwen/qwen3-235b-a22b-2507",
 
-  "COMMAND_MODEL_NAME": "xiaomi/mimo-v2-flash",
-  "COMMAND_FALLBACK1": "z-ai/glm-4.7-flash",
-  "COMMAND_FALLBACK2": "qwen/qwen3-235b-a22b-2507",
+    "COMMAND_MODEL_NAME": "openai/gpt-oss-120b",
+    "COMMAND_FALLBACK1": "z-ai/glm-4.7-flash",
+    "COMMAND_FALLBACK2": "qwen/qwen3-235b-a22b-2507",
 
     "CALCULATOR_MODEL_NAME": "openai/gpt-oss-120b",
     "CALCULATOR_FALLBACK1": "z-ai/glm-4.7-flash",
