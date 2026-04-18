@@ -9,11 +9,11 @@ from pydantic import BaseModel
 
 import settings_manager as s
 
-whisper_model = None
-vision_model = None
-router_model = None
-command_model = None
-calculator_model = None
+whisper_model: Groq = None
+vision_model: ChatOpenAI = None
+router_model: ChatOpenAI = None
+command_model: ChatOpenAI = None
+calculator_model: ChatOpenAI = None
 
 reasoning_needed_models = ['openai/gpt-oss-120b']
 

@@ -258,7 +258,7 @@ async def handle_processor(router_response: ChainRouter,
                 history.append(AIMessage(content=answer))
                 await state.update_data(history=trim_history(history))
                 await state.set_state(UserState.wait_input)
-                await answer_to_user(message, ai_msg.content)
+                await answer_to_user(message, answer)
                 return
             else:
                 await answer_to_user(message, "Вибачте, щось пішло не так. Спробуйте, будь ласка, ще")
