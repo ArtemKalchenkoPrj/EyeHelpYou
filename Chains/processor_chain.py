@@ -2,7 +2,7 @@ import asyncio
 import logging
 import math
 from datetime import datetime, date, timedelta
-from typing import Annotated
+from typing import Annotated, Optional
 from urllib.parse import urlparse
 
 from RestrictedPython import compile_restricted, safe_globals, safe_builtins
@@ -116,7 +116,7 @@ def run_code_restricted(code: str) -> str:
 class RunCalculatorToolInput(BaseModel):
     """Schema for input to the calculator"""
     question: str = Field(description="the math problem that you want to solve")
-    axioms: dict = Field(
+    axioms: Optional[dict] = Field(
         description="the axioms of current math problem. keys - name of axiom, value - value of axiom",
         examples=[
             # Приклад 1: Простий чек/ціни
@@ -130,7 +130,7 @@ class RunCalculatorToolInput(BaseModel):
 
 
 @tool("calculator", args_schema=RunCalculatorToolInput)
-async def run_calculator(axioms: dict, question: str) -> str:
+async def run_calculator(axioms: Optional[dict], question: str) -> str:
     """Функція для обчислення математичних операцій. Коли тобі потрібно виконати БУДЬ-ЯКІ обчислення - викликай цю функцію.
     Важливо: передавай питання повинно бути логічно сформоване та надано англійською мовою."""
     current_date = datetime.now()
@@ -175,7 +175,7 @@ async def run_calculator(axioms: dict, question: str) -> str:
         return str(content)
 
     user_query = HumanMessage(
-        content=f"Context:{axioms}\nUser Question:{question}"
+        content=f"{f'Context:{axioms}' if axioms else ''}\nUser Question:{question}"
     )
     messages = [SystemMessage(content=system), user_query]
 
@@ -186,12 +186,13 @@ async def run_calculator(axioms: dict, question: str) -> str:
 
     # Замість просто raw_code, ми додаємо оголошення змінних зверху
     setup_code = ""
-    for key, value in axioms.items():
-        # Формуємо рядок виду: distance = 100
-        if isinstance(value, str):
-            setup_code += f"{key} = '{value}'\n"
-        else:
-            setup_code += f"{key} = {value}\n"
+    if axioms:
+        for key, value in axioms.items():
+            # Формуємо рядок виду: distance = 100
+            if isinstance(value, str):
+                setup_code += f"{key} = '{value}'\n"
+            else:
+                setup_code += f"{key} = {value}\n"
 
     full_code = setup_code + raw_code
     logger.debug(f"Запущено код: {full_code}")
@@ -215,6 +216,7 @@ async def run_processor(bot_name: str,
     Якщо розмова стосується чогось небезпечного - повідом користувача про це.
     Якщо фото нечітке, змилене, темне, або будь-яким чином заважає розпізнаванню допоможи користувачу інструкціями з покращення.
     Краще попросити краще фото ніж дати неточну відповідь.
+    При будь-яких розрахунках, навіть найпростіших викликай інструмент run_calculator
     
     Важливо: користувач НЕ БАЧИТЬ своє фото. Інструкції мають бути у вигляді конкретних дій:
     - замість "поверніть камеру" → "нахиліть телефон лівіше" або "нахиліть телефон правіше"

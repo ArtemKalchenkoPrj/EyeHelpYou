@@ -12,7 +12,7 @@ DEFAULT_SETTINGS = {
     "MIN_QUESTION_LENGTH": 5,
     "MAX_QUESTION_LENGTH": 250,
 
-    "VISION_MODEL_NAME": "google/gemini-3-flash-preview",
+    "VISION_MODEL_NAME": "openai/gpt-5.1-codex-mini",
     "VISION_FALLBACK1": "qwen/qwen3.5-397b-a17b",
     "VISION_FALLBACK2": "xiaomi/mimo-v2-omni",
 
