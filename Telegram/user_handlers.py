@@ -558,5 +558,15 @@ async def error_handler(event: ErrorEvent, bot):
         exc_info=event.exception
     )
 
+    try:
+        error_text = ("Вибачте, виникла внутрішня помилка. \n"
+                      "Будь ласка, спробуйте ще раз або перезапустіть бота командою похила риска старт англійськими літерами")
+
+        user_message = update.message
+        await answer_to_user(user_message, error_text)
+
+    except Exception as e:
+        logger.error(f"Не вдалося надіслати повідомлення про помилку користувачеві: {e}")
+
     admin_id = int(os.getenv("ADMIN_ID"))
     await bot.send_message(admin_id, f"Помилка: {event.exception}\n{user_info}\nІнпут: {user_input}")
